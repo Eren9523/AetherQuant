@@ -1,13 +1,13 @@
 {
-  "$schema": "../node_modules/wrangler/config-schema.json",
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "aetherquant",
-  "main": "src/index.ts",
+  "main": "./worker/src/index.ts",
   "compatibility_date": "2025-02-24",
   "compatibility_flags": [
     "nodejs_compat"
   ],
   "assets": {
-    "directory": "../dist",
+    "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
@@ -18,8 +18,7 @@
     {
       "binding": "DB",
       "database_name": "aetherquant-db",
-      "database_id": "aetherquant-db",
-      "migrations_dir": "migrations"
+      "database_id": "aetherquant-db"
     }
   ],
   "r2_buckets": [

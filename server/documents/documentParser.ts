@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { d1Client } from '../db/d1Client';
 import { r2Client } from '../storage/r2Client';
 
@@ -44,7 +45,7 @@ export class DocumentParserEngine {
     // Extract text content
     let extractedText = '';
     if (fileType === 'csv' || fileType === 'txt' || fileType === 'json') {
-      extractedText = buffer.toString('utf-8');
+      extractedText = new TextDecoder('utf-8').decode(buffer);
     } else {
       extractedText = `[文档解析结果] ${title}\n文件大小: ${(buffer.length / 1024).toFixed(1)} KB\n包含主要财务指标、营业收入同比变动、研发投入比例及毛利率走势分析。`;
     }

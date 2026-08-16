@@ -27,7 +27,7 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
+      const errJson = (await response.json().catch(() => ({}))) as Record<string, any>;
       throw new Error(errJson.error || `HTTP error ${response.status}: ${response.statusText}`);
     }
 
@@ -46,7 +46,7 @@ export class ApiClient {
     });
 
     if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
+      const errJson = (await response.json().catch(() => ({}))) as Record<string, any>;
       throw new Error(errJson.error || `HTTP error ${response.status}: ${response.statusText}`);
     }
 

@@ -20,6 +20,10 @@
         "./*"
       ]
     },
+    "types": [
+      "@cloudflare/workers-types",
+      "node"
+    ],
     "allowImportingTsExtensions": true,
     "noEmit": true
   }

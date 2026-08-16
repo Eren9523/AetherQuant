@@ -96,7 +96,7 @@ class D1DatabaseClient {
           },
           body: JSON.stringify({ sql, params }),
         });
-        const data = await res.json();
+        const data = (await res.json()) as any;
         if (data.success && data.result && data.result[0]) {
           return {
             results: data.result[0].results || [],
