@@ -1,0 +1,48 @@
+import { MLModelExperiment } from '../types';
+
+export const mockMLModels: MLModelExperiment[] = [
+  {
+    id: 'ml_lstm_5d',
+    name: 'LSTM 序列神经网络 (未来5日超额收益预测)',
+    type: 'LSTM',
+    dataset: '沪深300 成分股历史日线 + 动量/波动率特征',
+    features: ['OHLCV', 'MOM_20D', 'LOW_VOL_20D', 'TURNOVER_20D', 'AI_SENTIMENT'],
+    target: 'Future_5D_Excess_Return',
+    trainRange: '2016-01-01 → 2022-12-31',
+    testRange: '2023-01-01 → 2026-03-01',
+    accuracy: 68.4,
+    ic: 0.072,
+    rankIc: 0.089,
+    status: 'trained',
+    lossHistory: [
+      { epoch: 1, trainLoss: 0.452, valLoss: 0.488 },
+      { epoch: 5, trainLoss: 0.312, valLoss: 0.354 },
+      { epoch: 10, trainLoss: 0.224, valLoss: 0.278 },
+      { epoch: 15, trainLoss: 0.168, valLoss: 0.215 },
+      { epoch: 20, trainLoss: 0.135, valLoss: 0.182 },
+      { epoch: 25, trainLoss: 0.112, valLoss: 0.164 },
+      { epoch: 30, trainLoss: 0.098, valLoss: 0.158 },
+    ],
+  },
+  {
+    id: 'ml_xgboost_rank',
+    name: 'XGBoost 多因子截面排序模型',
+    type: 'XGBoost',
+    dataset: '全 A 股基本面 + 技术面 60+ 因子矩阵',
+    features: ['ROE_TTM', 'EP_TTM', 'MOM_60D', 'LOW_VOL_20D', 'REV_YOY'],
+    target: 'Next_Month_Quantile_Rank',
+    trainRange: '2018-01-01 → 2023-12-31',
+    testRange: '2024-01-01 → 2026-03-01',
+    accuracy: 72.1,
+    ic: 0.085,
+    rankIc: 0.104,
+    status: 'trained',
+    lossHistory: [
+      { epoch: 1, trainLoss: 0.520, valLoss: 0.540 },
+      { epoch: 10, trainLoss: 0.280, valLoss: 0.310 },
+      { epoch: 20, trainLoss: 0.170, valLoss: 0.210 },
+      { epoch: 30, trainLoss: 0.110, valLoss: 0.165 },
+      { epoch: 40, trainLoss: 0.085, valLoss: 0.142 },
+    ],
+  },
+];
