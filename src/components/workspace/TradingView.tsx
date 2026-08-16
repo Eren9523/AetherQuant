@@ -21,7 +21,7 @@ export const TradingView: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Order Form */}
         <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">

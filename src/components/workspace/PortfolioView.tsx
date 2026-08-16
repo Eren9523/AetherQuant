@@ -7,7 +7,7 @@ export const PortfolioView: React.FC = () => {
   const { paperAccount, navigateToStockDetail } = useApp();
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
       <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
           <div>

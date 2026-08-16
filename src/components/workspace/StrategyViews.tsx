@@ -41,7 +41,7 @@ export const StrategyViews: React.FC = () => {
   ];
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
       {/* Subtabs Menu */}
       <div className="flex items-center gap-2 border-b border-neutral-200/80 pb-3">
         <button

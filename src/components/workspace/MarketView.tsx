@@ -20,7 +20,7 @@ export const MarketView: React.FC = () => {
   });
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
       {/* Top Global Index Cards */}
       <div>
         <h2 className="text-sm font-bold text-neutral-900 mb-3 flex items-center gap-2">

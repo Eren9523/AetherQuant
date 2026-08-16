@@ -246,7 +246,7 @@ export const AIResearchView: React.FC = () => {
   };
 
   return (
-    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
       {/* Top Header matching exact screenshot style & logo */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -316,9 +316,9 @@ export const AIResearchView: React.FC = () => {
 
       {/* Main Two-Column Layout from Screenshot */}
       {activeTab === 'chat' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Sidebar: 研究预设模版 (280px-320px equivalent / 4 cols) */}
-          <div className="lg:col-span-4 bg-white p-5 md:p-6 rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+          {/* Left Sidebar: 研究预设模版 & 环境 (4 cols on xl, equal height with right box) */}
+          <div className="lg:col-span-5 xl:col-span-4 bg-white p-5 md:p-6 rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between h-full space-y-6">
             <div className="flex items-center justify-between">
               <span className="text-xs md:text-sm font-semibold text-slate-500">
                 研究预设模版
@@ -341,56 +341,58 @@ export const AIResearchView: React.FC = () => {
             </div>
 
             {/* Research Context & Benchmarks (量化研究环境) */}
-            <div className="pt-4 border-t border-slate-100 space-y-3">
+            <div className="pt-4 border-t border-slate-100 space-y-3 mt-auto">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500">
+                <span className="text-xs font-semibold text-slate-600">
                   量化研究环境与基准
                 </span>
-                <span className="text-[10px] font-mono text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/50 flex items-center gap-1">
+                <span className="text-[10px] font-mono text-emerald-600 font-medium bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/50 flex items-center gap-1 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                   实时就绪
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 gap-2 text-xs font-mono">
-                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] text-slate-400 font-sans block">默认基准与标的池</span>
-                    <span className="font-bold text-slate-800 text-xs font-mono">沪深300 (000300.SH)</span>
+              <div className="grid grid-cols-1 gap-2.5 text-xs font-mono">
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <span className="text-[10px] text-slate-400 font-sans block truncate">默认基准与标的池</span>
+                    <span className="font-bold text-slate-800 text-xs font-mono truncate block">沪深300 (000300.SH)</span>
                   </div>
-                  <span className="text-[10px] text-slate-500 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                  <span className="text-[10px] text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs shrink-0 whitespace-nowrap">
                     300 只标的
                   </span>
                 </div>
 
-                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] text-slate-400 font-sans block">主活动特征因子</span>
-                    <span className="font-bold text-slate-800 text-xs font-mono">MOM_60 / VOL_20</span>
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <span className="text-[10px] text-slate-400 font-sans block truncate">主活动特征因子</span>
+                    <span className="font-bold text-slate-800 text-xs font-mono truncate block">MOM_60 / VOL_20</span>
                   </div>
-                  <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-1 rounded-lg border border-purple-200/60 font-sans">
+                  <span className="text-[10px] text-purple-700 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-200/60 font-sans shrink-0 whitespace-nowrap">
                     动量低波
                   </span>
                 </div>
 
-                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] text-slate-400 font-sans block">仿真撮合与税费制度</span>
-                    <span className="font-semibold text-slate-700 text-[11px] font-mono">T+1 · 印花税0.05% · 佣金0.03%</span>
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <span className="text-[10px] text-slate-400 font-sans block truncate">仿真撮合与税费制度</span>
+                    <span className="font-semibold text-slate-700 text-[11px] font-mono truncate block">
+                      T+1 · 印花税0.05% · 佣金0.03%
+                    </span>
                   </div>
-                  <span className="text-[10px] text-slate-600 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs font-sans">
+                  <span className="text-[10px] text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs font-sans shrink-0 whitespace-nowrap">
                     A股标准
                   </span>
                 </div>
 
-                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] text-slate-400 font-sans block">当前焦点分析标的</span>
-                    <span className="font-bold text-slate-900 text-xs font-mono">{selectedStockSymbol}</span>
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <span className="text-[10px] text-slate-400 font-sans block truncate">当前焦点分析标的</span>
+                    <span className="font-bold text-slate-900 text-xs font-mono truncate block">{selectedStockSymbol}</span>
                   </div>
                   <button
                     onClick={() => navigateToStockDetail(selectedStockSymbol)}
-                    className="text-[10px] text-slate-700 hover:text-slate-950 bg-white hover:bg-slate-100 px-2 py-1 rounded-lg border border-slate-200 shadow-2xs transition-colors flex items-center gap-0.5 font-sans"
+                    className="text-[10px] text-slate-700 hover:text-slate-950 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs transition-colors flex items-center gap-0.5 font-sans shrink-0 whitespace-nowrap"
                   >
                     <span>深度看盘</span>
                     <ChevronRight className="w-3 h-3 text-slate-400" />
@@ -400,14 +402,14 @@ export const AIResearchView: React.FC = () => {
             </div>
 
             {/* Quick Context Bottom Bar */}
-            <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between font-mono">
+            <div className="pt-2.5 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between font-mono">
               <span>AKShare + DeepSeek + D1</span>
               <span className="text-slate-500">v1.2.0 Quant Engine</span>
             </div>
           </div>
 
-          {/* Right Main Chat Card: Exact screenshot container (8 cols) */}
-          <div className="lg:col-span-8 bg-white p-6 md:p-7 rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm flex flex-col min-h-[620px] h-[calc(100vh-230px)] max-h-[780px]">
+          {/* Right Main Chat Card: Aligned height and column span */}
+          <div className="lg:col-span-7 xl:col-span-8 bg-white p-5 md:p-7 rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm flex flex-col justify-between h-full min-h-[640px] max-h-[820px]">
             {/* Scrollable Conversation Stream */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 -mr-2">
               {messages.map((msg, idx) => (

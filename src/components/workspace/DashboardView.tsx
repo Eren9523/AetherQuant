@@ -10,7 +10,7 @@ export const DashboardView: React.FC = () => {
   const { paperAccount, setWorkspaceView, navigateToStockDetail } = useApp();
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+    <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
       {/* Top Indices Ticker Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         {mockIndices.map((idx) => (
