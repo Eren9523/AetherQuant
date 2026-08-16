@@ -1,7 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ResearchService } from '../../services/quantServices';
-import { Sparkles, Send, CheckCircle2, FileText, Database, ArrowRight, Loader2, Download, Search, FileCode, Layers, Cpu, Check, FileCheck, RefreshCw } from 'lucide-react';
+import {
+  Cpu,
+  Send,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Download,
+  Search,
+  Layers,
+  Check,
+  TrendingUp,
+  Sparkles,
+  RefreshCw,
+  ExternalLink,
+  ChevronRight,
+  Database,
+  BarChart3,
+} from 'lucide-react';
 
 export const AIResearchView: React.FC = () => {
   const { workspaceView, selectedStockSymbol, navigateToStockDetail, addFactorToLibrary } = useApp();
@@ -17,31 +34,71 @@ export const AIResearchView: React.FC = () => {
     }
   }, [workspaceView]);
 
-  // Chat tab state
+  // Chat state
   const [inputPrompt, setInputPrompt] = useState('');
   const [messages, setMessages] = useState<
     {
+      id: string;
       sender: 'user' | 'assistant';
       content: string;
       steps?: string[];
       resultCard?: any;
+      timestamp?: string;
     }[]
   >([
     {
+      id: 'welcome-msg',
       sender: 'assistant',
-      content: `欢迎来到 Aether AI 研究中心。我可以为您筛选股票、评估因子分布、解析券商研报 PDF 并构建高夏普比率量化策略。`,
-      steps: ['已接入 Tushare / SEC EDGAR / 60+ 因子多维知识图谱'],
+      content: `你好！我是 Aether 量化研究助手。你可以用自然语言告诉我筛选逻辑或策略想法。例如：“帮我从沪深300中寻找最近60日趋势较强，同时波动率较低、成交量改善的股票”`,
+      steps: ['已接入 AKShare / SEC EDGAR / 60+ 因子横截面图谱与实时多因子引擎'],
     },
   ]);
   const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Docs tab state
+  // Docs state
   const [selectedDocId, setSelectedDocId] = useState<string>('doc-1');
   const [docSearchQuery, setDocSearchQuery] = useState('');
   const [docPrompt, setDocPrompt] = useState('');
   const [docAnalysisResult, setDocAnalysisResult] = useState<string | null>(null);
   const [isAnalyzingDoc, setIsAnalyzingDoc] = useState(false);
   const [addedFactors, setAddedFactors] = useState<Record<string, boolean>>({});
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
+
+  const presets = [
+    {
+      id: 'p1',
+      title: '寻找沪深300中60日动量前20%且低波动股票',
+      query: '帮我从沪深300中寻找最近60日动量排名位于前20%，同时20日已实现波动率较低、换手率改善的股票。',
+    },
+    {
+      id: 'p2',
+      title: '比较贵州茅台与宁德时代的质量因子与估值性价比',
+      query: '对比分析 贵州茅台 (600519.SH) 与 宁德时代 (300750.SZ) 的 ROE 稳定性、质量因子评分与当前估值性价比。',
+    },
+    {
+      id: 'p3',
+      title: '构建以 ROE 为核心的质量成长量化策略方案',
+      query: '请为我设计一个以 ROE 为核心的 A 股质量成长多因子策略方案，包含因子权重配置、调仓周期与回撤控制建议。',
+    },
+    {
+      id: 'p4',
+      title: '解释全市场 RankIC 均值异动原因',
+      query: '请结合当前宏观利率、行业轮动与流动性分布，深度解释全市场动量与波动率因子的 RankIC 均值异动原因。',
+    },
+    {
+      id: 'p5',
+      title: `分析标的 [${selectedStockSymbol}] 动量与估值匹配度`,
+      query: `请基于最新截面数据，详细分析标的 [${selectedStockSymbol}] 的多因子综合评分、筹码分布及行业同业分位值。`,
+    },
+  ];
 
   const mockDocs = [
     {
@@ -93,7 +150,7 @@ export const AIResearchView: React.FC = () => {
       status: '已提炼 8 个因子',
       category: '量化前沿研报',
       keyMetrics: {
-        revenue: 'N/A (量化学术)',
+        revenue: 'N/A (学术论文)',
         netProfit: 'N/A',
         peRatio: 'Sharpe 2.14',
         factorScore: '98.0/100',
@@ -107,19 +164,23 @@ export const AIResearchView: React.FC = () => {
 
   const selectedDoc = mockDocs.find((d) => d.id === selectedDocId) || mockDocs[0];
 
-  const presets = [
-    '帮我从沪深300中寻找最近60日趋势较强，同时波动率较低、成交量改善的股票。',
-    `详细分析当前股票 [${selectedStockSymbol}] 的动量与估值因子匹配度。`,
-    '解释多因子策略在 2024 年如何规避市场系统性回撤。',
-    '比较 LSTM 神经网络策略与经典 XGBoost 截面排序模型的 IC 均值区别。',
-  ];
-
-  const handleSend = async (text?: string) => {
-    const query = text || inputPrompt;
+  const handleSend = async (queryText?: string) => {
+    const query = queryText || inputPrompt;
     if (!query.trim() || loading) return;
 
+    const userMsgId = `user-${Date.now()}`;
+    const assistantMsgId = `assistant-${Date.now()}`;
+
     setInputPrompt('');
-    setMessages((prev) => [...prev, { sender: 'user', content: query }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: userMsgId,
+        sender: 'user',
+        content: query,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      },
+    ]);
     setLoading(true);
 
     try {
@@ -127,16 +188,23 @@ export const AIResearchView: React.FC = () => {
       setMessages((prev) => [
         ...prev,
         {
+          id: assistantMsgId,
           sender: 'assistant',
           content: res.text,
           steps: res.steps,
           resultCard: res.resultCard,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { sender: 'assistant', content: '处理请求失败，请稍后重试。' },
+        {
+          id: assistantMsgId,
+          sender: 'assistant',
+          content: '处理请求失败，请稍后重试或检查网络状态。',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
       ]);
     } finally {
       setLoading(false);
@@ -157,7 +225,7 @@ export const AIResearchView: React.FC = () => {
         `2. 提取的量化信号：已自动转换 ${selectedDoc.extractedFactors.length} 个因子特征，包含 ${selectedDoc.extractedFactors.map(f => f.code).join(', ')}。\n` +
         `3. 估值与因子匹配：针对 ${selectedDoc.keyMetrics.peRatio} 估值区间，建议在策略构建器中分配 15% 权重。`
       );
-    }, 1000);
+    }, 900);
   };
 
   const handleAddFactor = (f: { code: string; name: string; ic: string; desc: string }) => {
@@ -178,75 +246,188 @@ export const AIResearchView: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
-      {/* Top Selector Tabs */}
-      <div className="flex items-center justify-between border-b border-neutral-200/80 pb-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab('chat')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              activeTab === 'chat' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'
-            }`}
-          >
-            AI 多因子对话研究 (Thread)
-          </button>
-          <button
-            onClick={() => setActiveTab('docs')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
-              activeTab === 'docs' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>研报与财报 PDF 智能解析</span>
-          </button>
+    <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto animate-in fade-in duration-300">
+      {/* Top Header matching exact screenshot style & logo */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {/* Exact Logo Icon from Screenshot */}
+          <div className="p-2 rounded-xl text-slate-900">
+            <Cpu className="w-8 h-8 text-slate-900 stroke-[2.2]" />
+          </div>
+          <div>
+            <h1 className="text-xl md:text-2xl font-bold tracking-tight text-slate-900 font-sans">
+              AI 交互式量化研究终端
+            </h1>
+            <p className="text-xs md:text-sm text-slate-500 font-normal mt-0.5">
+              基于大模型与向量数据库的交互式因子挖掘、多维归因与自然语言策略构建
+            </p>
+          </div>
         </div>
 
-        <span className="text-xs font-mono text-neutral-400">
-          AI Engine: Gemini 2.5 Flash · 已同步 Tushare / SEC EDGAR / 研报知识库
-        </span>
+        {/* Right Floating Badge / Glowing Logo from Screenshot */}
+        <div className="flex items-center gap-3 self-end sm:self-auto">
+          {/* Sub-view Switcher pills */}
+          <div className="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/60">
+            <button
+              onClick={() => setActiveTab('chat')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                activeTab === 'chat'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              交互研究
+            </button>
+            <button
+              onClick={() => setActiveTab('docs')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                activeTab === 'docs'
+                  ? 'bg-white text-slate-900 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>研报解析</span>
+            </button>
+          </div>
+
+          {/* Screenshot AetherQuant Glowing App Badge */}
+          <div className="relative group cursor-pointer" title="AetherQuant AI Terminal Online">
+            <div className="w-11 h-11 rounded-2xl bg-slate-950 flex items-center justify-center border border-slate-800 shadow-md shadow-emerald-500/10 transition-transform group-hover:scale-105">
+              {/* Custom High-Tech Trajectory SVG matching image icon */}
+              <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M4 19C7 18 12 16 17 7"
+                  stroke="#34d399"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                />
+                <circle cx="17.5" cy="6.5" r="2" fill="#34d399" />
+              </svg>
+            </div>
+            {/* Subtle Green Pulse */}
+            <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+          </div>
+        </div>
       </div>
 
+      {/* Main Two-Column Layout from Screenshot */}
       {activeTab === 'chat' && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Presets Menu */}
-          <div className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-mono">
-              Research Presets (预设分析)
-            </h3>
-            <div className="space-y-2">
-              {presets.map((p, idx) => (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Sidebar: 研究预设模版 (280px-320px equivalent / 4 cols) */}
+          <div className="lg:col-span-4 bg-white p-5 md:p-6 rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs md:text-sm font-semibold text-slate-500">
+                研究预设模版
+              </span>
+              <span className="text-[11px] font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                {presets.length} 个模板
+              </span>
+            </div>
+
+            <div className="space-y-2.5">
+              {presets.map((preset) => (
                 <button
-                  key={idx}
-                  onClick={() => handleSend(p)}
-                  className="w-full text-left p-3 rounded-xl bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/60 text-xs text-neutral-800 transition-colors line-clamp-3"
+                  key={preset.id}
+                  onClick={() => handleSend(preset.query)}
+                  className="w-full text-left p-3.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/70 hover:border-slate-300 text-xs md:text-sm text-slate-700 font-normal leading-snug transition-all shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-sm"
                 >
-                  {p}
+                  {preset.title}
                 </button>
               ))}
             </div>
+
+            {/* Research Context & Benchmarks (量化研究环境) */}
+            <div className="pt-4 border-t border-slate-100 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500">
+                  量化研究环境与基准
+                </span>
+                <span className="text-[10px] font-mono text-emerald-600 font-medium bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/50 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  实时就绪
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 text-xs font-mono">
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-400 font-sans block">默认基准与标的池</span>
+                    <span className="font-bold text-slate-800 text-xs font-mono">沪深300 (000300.SH)</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                    300 只标的
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-400 font-sans block">主活动特征因子</span>
+                    <span className="font-bold text-slate-800 text-xs font-mono">MOM_60 / VOL_20</span>
+                  </div>
+                  <span className="text-[10px] text-purple-700 bg-purple-50 px-2 py-1 rounded-lg border border-purple-200/60 font-sans">
+                    动量低波
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-400 font-sans block">仿真撮合与税费制度</span>
+                    <span className="font-semibold text-slate-700 text-[11px] font-mono">T+1 · 印花税0.05% · 佣金0.03%</span>
+                  </div>
+                  <span className="text-[10px] text-slate-600 bg-white px-2 py-1 rounded-lg border border-slate-200 shadow-2xs font-sans">
+                    A股标准
+                  </span>
+                </div>
+
+                <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/60 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] text-slate-400 font-sans block">当前焦点分析标的</span>
+                    <span className="font-bold text-slate-900 text-xs font-mono">{selectedStockSymbol}</span>
+                  </div>
+                  <button
+                    onClick={() => navigateToStockDetail(selectedStockSymbol)}
+                    className="text-[10px] text-slate-700 hover:text-slate-950 bg-white hover:bg-slate-100 px-2 py-1 rounded-lg border border-slate-200 shadow-2xs transition-colors flex items-center gap-0.5 font-sans"
+                  >
+                    <span>深度看盘</span>
+                    <ChevronRight className="w-3 h-3 text-slate-400" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Context Bottom Bar */}
+            <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between font-mono">
+              <span>AKShare + DeepSeek + D1</span>
+              <span className="text-slate-500">v1.2.0 Quant Engine</span>
+            </div>
           </div>
 
-          {/* Middle Main AI Thread Chat */}
-          <div className="lg:col-span-2 p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-sm flex flex-col justify-between h-[640px]">
-            {/* Messages Scroll Area */}
-            <div className="overflow-y-auto space-y-4 pr-2">
+          {/* Right Main Chat Card: Exact screenshot container (8 cols) */}
+          <div className="lg:col-span-8 bg-white p-6 md:p-7 rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm flex flex-col min-h-[620px] h-[calc(100vh-230px)] max-h-[780px]">
+            {/* Scrollable Conversation Stream */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-2 -mr-2">
               {messages.map((msg, idx) => (
                 <div
-                  key={idx}
+                  key={msg.id || idx}
                   className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
                 >
+                  {/* Assistant or User Message Bubble */}
                   <div
-                    className={`max-w-[90%] p-4 rounded-2xl text-xs leading-relaxed ${
+                    className={`max-w-[92%] p-4 md:p-5 rounded-2xl text-xs md:text-sm leading-relaxed ${
                       msg.sender === 'user'
-                        ? 'bg-neutral-900 text-white shadow-sm'
-                        : 'bg-neutral-50 text-neutral-800 border border-neutral-200/80'
+                        ? 'bg-slate-900 text-white shadow-sm font-medium'
+                        : 'bg-slate-50/80 text-slate-700 border border-slate-100/90'
                     }`}
                   >
-                    {msg.content}
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
 
-                    {/* Execution Steps */}
-                    {msg.steps && (
-                      <div className="mt-3 pt-2.5 border-t border-neutral-200/60 space-y-1 font-mono text-[11px] text-neutral-500">
+                    {/* Step Badges (if any) */}
+                    {msg.steps && msg.steps.length > 0 && (
+                      <div className="mt-3.5 pt-3 border-t border-slate-200/60 space-y-1.5 font-mono text-[11px] text-slate-500">
                         {msg.steps.map((st, sIdx) => (
                           <div key={sIdx} className="flex items-center gap-1.5">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
@@ -256,24 +437,34 @@ export const AIResearchView: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Stock Rank Card */}
+                    {/* Result Card: Stock Ranking / Factor Details */}
                     {msg.resultCard && (
-                      <div className="mt-3 pt-3 border-t border-neutral-200/60 space-y-2">
-                        <div className="text-xs font-bold text-neutral-900">{msg.resultCard.title}</div>
-                        {msg.resultCard.items.map((st: any, sIdx: number) => (
-                          <div
-                            key={sIdx}
-                            onClick={() => navigateToStockDetail(st.symbol)}
-                            className="p-2.5 rounded-xl bg-white border border-neutral-200 hover:border-neutral-400 cursor-pointer transition-all flex items-center justify-between"
-                          >
-                            <div>
-                              <span className="font-bold text-neutral-900">{st.name}</span>{' '}
-                              <span className="font-mono text-neutral-400">({st.symbol})</span>
-                              <div className="text-[11px] text-neutral-500">{st.reason}</div>
+                      <div className="mt-3.5 pt-3.5 border-t border-slate-200/60 space-y-2.5">
+                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                          <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>{msg.resultCard.title}</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {msg.resultCard.items.map((st: any, sIdx: number) => (
+                            <div
+                              key={sIdx}
+                              onClick={() => navigateToStockDetail(st.symbol)}
+                              className="p-3 rounded-xl bg-white border border-slate-200/80 hover:border-slate-400 hover:shadow-sm cursor-pointer transition-all flex items-center justify-between gap-3"
+                            >
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-slate-900 text-xs">{st.name}</span>
+                                  <span className="font-mono text-slate-400 text-[10px]">{st.symbol}</span>
+                                </div>
+                                <div className="text-[11px] text-slate-500 truncate mt-0.5">{st.reason}</div>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <span className="font-mono font-bold text-emerald-600 text-xs">{st.score}分</span>
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                              </div>
                             </div>
-                            <span className="font-mono font-bold text-emerald-600">{st.score}分</span>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -281,68 +472,49 @@ export const AIResearchView: React.FC = () => {
               ))}
 
               {loading && (
-                <div className="flex items-center gap-2 text-xs text-neutral-400 p-3 bg-neutral-50 rounded-xl w-fit">
-                  <Loader2 className="w-4 h-4 animate-spin text-neutral-600" />
-                  <span>Aether AI 正在执行多因子搜索...</span>
+                <div className="flex items-center gap-2.5 text-xs text-slate-500 p-3.5 bg-slate-50 rounded-2xl w-fit border border-slate-100 animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin text-slate-700" />
+                  <span>Aether AI 正在执行全市场多因子计算与知识检索...</span>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Form */}
+            {/* Bottom Input Area matching screenshot */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSend();
               }}
-              className="mt-4 pt-3 border-t border-neutral-100 flex items-center gap-2"
+              className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-3"
             >
               <input
                 type="text"
                 value={inputPrompt}
                 onChange={(e) => setInputPrompt(e.target.value)}
-                placeholder="向 Aether AI 发起多因子策略指令..."
-                className="flex-1 px-4 py-2.5 bg-neutral-100 text-xs text-neutral-900 rounded-xl focus:outline-none font-medium placeholder:text-neutral-400"
+                placeholder="输入你的量化问题或指令..."
+                className="flex-1 px-4 py-3.5 bg-white text-xs md:text-sm text-slate-800 rounded-xl border border-slate-200 focus:outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-300 font-normal placeholder:text-slate-400 transition-all"
               />
               <button
                 type="submit"
                 disabled={!inputPrompt.trim() || loading}
-                className="p-2.5 bg-neutral-900 text-white rounded-xl hover:bg-black disabled:opacity-40 transition-colors"
+                aria-label="发送量化指令"
+                className="p-3.5 bg-slate-900 hover:bg-slate-950 text-white rounded-xl disabled:opacity-40 transition-all flex items-center justify-center shrink-0 shadow-sm hover:shadow"
               >
                 <Send className="w-4 h-4" />
               </button>
             </form>
           </div>
-
-          {/* Right Research Context Panel */}
-          <div className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-mono">
-              Research Context (研究环境)
-            </h3>
-            <div className="space-y-3 text-xs font-mono">
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
-                <span className="text-neutral-400 block text-[10px]">当前默认股票池</span>
-                <span className="font-bold text-neutral-900">沪深300 (000300.SH)</span>
-              </div>
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
-                <span className="text-neutral-400 block text-[10px]">活动核心因子</span>
-                <span className="font-bold text-neutral-900">MOM_60D / LOW_VOL_20D</span>
-              </div>
-              <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
-                <span className="text-neutral-400 block text-[10px]">当前选择标的</span>
-                <span className="font-bold text-neutral-900">{selectedStockSymbol}</span>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
-      {/* Doc Research Workspace */}
+      {/* Document PDF Research Tab */}
       {activeTab === 'docs' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Document Catalog Sidebar */}
-          <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-neutral-100">
-              <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+          <div className="lg:col-span-4 bg-white p-5 rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-purple-600" />
                 机构研报与财报知识库
               </h3>
@@ -353,13 +525,13 @@ export const AIResearchView: React.FC = () => {
 
             {/* Doc Filter Search */}
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
                 value={docSearchQuery}
                 onChange={(e) => setDocSearchQuery(e.target.value)}
                 placeholder="搜索研报、机构或财报关键词..."
-                className="w-full pl-8 pr-3 py-1.5 bg-neutral-50 text-xs text-neutral-800 rounded-xl border border-neutral-200 focus:outline-none focus:bg-white transition-colors"
+                className="w-full pl-8 pr-3 py-2 bg-slate-50 text-xs text-slate-800 rounded-xl border border-slate-200 focus:outline-none focus:bg-white transition-colors"
               />
             </div>
 
@@ -373,22 +545,26 @@ export const AIResearchView: React.FC = () => {
                     onClick={() => setSelectedDocId(doc.id)}
                     className={`p-3.5 rounded-xl border transition-all cursor-pointer space-y-2 ${
                       isSelected
-                        ? 'bg-neutral-900 text-white border-neutral-900 shadow-md scale-[1.01]'
-                        : 'bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border-neutral-200/70'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-md scale-[1.01]'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-800 border-slate-200/70'
                     }`}
                   >
                     <div className="flex items-center justify-between text-[10px] font-mono">
-                      <span className={`px-2 py-0.5 rounded ${isSelected ? 'bg-neutral-800 text-purple-300' : 'bg-neutral-200 text-neutral-600'}`}>
+                      <span className={`px-2 py-0.5 rounded ${isSelected ? 'bg-slate-800 text-purple-300' : 'bg-slate-200 text-slate-600'}`}>
                         {doc.category}
                       </span>
-                      <span className={isSelected ? 'text-neutral-400' : 'text-neutral-400'}>{doc.date}</span>
+                      <span className={isSelected ? 'text-slate-400' : 'text-slate-400'}>{doc.date}</span>
                     </div>
 
                     <h4 className="text-xs font-bold leading-snug line-clamp-2">{doc.title}</h4>
 
                     <div className="flex items-center justify-between text-[11px] pt-1">
-                      <span className={isSelected ? 'text-neutral-400 font-mono' : 'text-neutral-500 font-mono'}>{doc.source} · {doc.pages}页</span>
-                      <span className={`font-mono text-[10px] ${isSelected ? 'text-emerald-400' : 'text-emerald-600'}`}>{doc.status}</span>
+                      <span className={isSelected ? 'text-slate-400 font-mono' : 'text-slate-500 font-mono'}>
+                        {doc.source} · {doc.pages}页
+                      </span>
+                      <span className={`font-mono text-[10px] ${isSelected ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                        {doc.status}
+                      </span>
                     </div>
                   </div>
                 );
@@ -399,53 +575,53 @@ export const AIResearchView: React.FC = () => {
           {/* PDF Viewer & AI Factor Extraction Workbench */}
           <div className="lg:col-span-8 space-y-6">
             {/* Top Doc Header */}
-            <div className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
+            <div className="p-5 md:p-6 bg-white rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 text-xs text-neutral-500 font-mono mb-1">
+                  <div className="flex items-center gap-2 text-xs text-slate-500 font-mono mb-1">
                     <span>{selectedDoc.category}</span>
                     <span>·</span>
                     <span>{selectedDoc.source}</span>
                     <span>·</span>
                     <span>{selectedDoc.pages} 页高清晰度解析</span>
                   </div>
-                  <h2 className="text-base font-bold text-neutral-900">{selectedDoc.title}</h2>
+                  <h2 className="text-base font-bold text-slate-900">{selectedDoc.title}</h2>
                 </div>
-                <button className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors shrink-0">
+                <button className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors shrink-0">
                   <Download className="w-3.5 h-3.5" />
                   <span>下载原始 PDF</span>
                 </button>
               </div>
 
               {/* Key Financial Metrics Banner */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-neutral-100 text-xs font-mono">
-                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
-                  <span className="text-[10px] text-neutral-400 block">营业收入/预告</span>
-                  <span className="font-bold text-neutral-900">{selectedDoc.keyMetrics.revenue}</span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-100 text-xs font-mono">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60">
+                  <span className="text-[10px] text-slate-400 block">营业收入/预告</span>
+                  <span className="font-bold text-slate-900">{selectedDoc.keyMetrics.revenue}</span>
                 </div>
-                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
-                  <span className="text-[10px] text-neutral-400 block">净利润增速</span>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60">
+                  <span className="text-[10px] text-slate-400 block">净利润增速</span>
                   <span className="font-bold text-emerald-600">{selectedDoc.keyMetrics.netProfit}</span>
                 </div>
-                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
-                  <span className="text-[10px] text-neutral-400 block">PE / 估值或夏普</span>
-                  <span className="font-bold text-neutral-900">{selectedDoc.keyMetrics.peRatio}</span>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60">
+                  <span className="text-[10px] text-slate-400 block">PE / 估值或夏普</span>
+                  <span className="font-bold text-slate-900">{selectedDoc.keyMetrics.peRatio}</span>
                 </div>
-                <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
-                  <span className="text-[10px] text-neutral-400 block">AI 因子置信度</span>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60">
+                  <span className="text-[10px] text-slate-400 block">AI 因子置信度</span>
                   <span className="font-bold text-purple-600">{selectedDoc.keyMetrics.factorScore}</span>
                 </div>
               </div>
             </div>
 
             {/* AI Extracted Executive Summary & Alpha Factors */}
-            <div className="p-5 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-5">
+            <div className="p-5 md:p-6 bg-white rounded-2xl md:rounded-3xl border border-slate-200/80 shadow-sm space-y-5">
               <div>
-                <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-mono flex items-center gap-2 mb-2">
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider font-mono flex items-center gap-2 mb-2">
                   <Sparkles className="w-4 h-4 text-purple-600" />
                   AI 智能研报摘要 (Executive Summary)
                 </h3>
-                <p className="text-xs text-neutral-700 leading-relaxed bg-purple-50/40 p-4 rounded-xl border border-purple-100">
+                <p className="text-xs text-slate-700 leading-relaxed bg-purple-50/40 p-4 rounded-xl border border-purple-100">
                   {selectedDoc.summary}
                 </p>
               </div>
@@ -453,26 +629,26 @@ export const AIResearchView: React.FC = () => {
               {/* Extracted Factors */}
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-mono flex items-center gap-2">
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider font-mono flex items-center gap-2">
                     <Cpu className="w-4 h-4 text-emerald-600" />
                     研报中提炼出的 Alpha 因子候选
                   </h3>
-                  <span className="text-[10px] font-mono text-neutral-400">可一键导入平台因子库</span>
+                  <span className="text-[10px] font-mono text-slate-400">可一键导入平台因子库</span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {selectedDoc.extractedFactors.map((f) => {
                     const isAdded = !!addedFactors[f.code];
                     return (
-                      <div key={f.code} className="p-4 bg-neutral-50 rounded-xl border border-neutral-200/60 space-y-2">
+                      <div key={f.code} className="p-4 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-neutral-900">{f.name}</span>
-                          <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded text-neutral-600 border border-neutral-200">
+                          <span className="text-xs font-bold text-slate-900">{f.name}</span>
+                          <span className="text-[10px] font-mono bg-white px-2 py-0.5 rounded text-slate-600 border border-slate-200">
                             {f.code}
                           </span>
                         </div>
-                        <p className="text-[11px] text-neutral-500 leading-tight">{f.desc}</p>
-                        <div className="flex items-center justify-between pt-2 border-t border-neutral-200/60 text-xs font-mono">
+                        <p className="text-[11px] text-slate-500 leading-tight">{f.desc}</p>
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 text-xs font-mono">
                           <span className="text-emerald-600 font-bold">IC: {f.ic}</span>
                           <button
                             onClick={() => handleAddFactor(f)}
@@ -480,7 +656,7 @@ export const AIResearchView: React.FC = () => {
                             className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-colors flex items-center gap-1 ${
                               isAdded
                                 ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-neutral-900 hover:bg-black text-white'
+                                : 'bg-slate-900 hover:bg-black text-white'
                             }`}
                           >
                             {isAdded ? <Check className="w-3 h-3" /> : <Layers className="w-3 h-3" />}
@@ -494,20 +670,20 @@ export const AIResearchView: React.FC = () => {
               </div>
 
               {/* Interactive Doc Q&A Bar */}
-              <div className="pt-4 border-t border-neutral-100 space-y-3">
-                <div className="text-xs font-bold text-neutral-900 font-mono">向当前研报提出深度问题:</div>
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <div className="text-xs font-bold text-slate-900 font-mono">向当前研报提出深度问题:</div>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     value={docPrompt}
                     onChange={(e) => setDocPrompt(e.target.value)}
                     placeholder="例如: 提取表4中的资本开支细项，或评估对 2026 年 EBITDA 的影响..."
-                    className="flex-1 px-4 py-2 bg-neutral-100 text-xs text-neutral-900 rounded-xl border border-neutral-200 focus:outline-none focus:bg-white font-medium"
+                    className="flex-1 px-4 py-2 bg-slate-100 text-xs text-slate-900 rounded-xl border border-slate-200 focus:outline-none focus:bg-white font-medium"
                   />
                   <button
                     onClick={() => handleAnalyzeDocPrompt()}
                     disabled={!docPrompt.trim() || isAnalyzingDoc}
-                    className="px-4 py-2 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl disabled:opacity-40 transition-colors flex items-center gap-1.5"
+                    className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-xs font-semibold rounded-xl disabled:opacity-40 transition-colors flex items-center gap-1.5"
                   >
                     {isAnalyzingDoc ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                     <span>AI 研报分析</span>
@@ -515,7 +691,7 @@ export const AIResearchView: React.FC = () => {
                 </div>
 
                 {docAnalysisResult && (
-                  <div className="p-4 bg-neutral-900 text-neutral-100 rounded-xl text-xs font-mono leading-relaxed whitespace-pre-wrap animate-in fade-in duration-300">
+                  <div className="p-4 bg-slate-900 text-slate-100 rounded-xl text-xs font-mono leading-relaxed whitespace-pre-wrap animate-in fade-in duration-300">
                     {docAnalysisResult}
                   </div>
                 )}
@@ -527,4 +703,5 @@ export const AIResearchView: React.FC = () => {
     </div>
   );
 };
+
 

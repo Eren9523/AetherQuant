@@ -1,0 +1,110 @@
+openapi: 3.0.3
+info:
+  title: AetherQuant API Contract
+  version: 1.0.0
+  description: High-performance API Specification for AetherQuant AI Quant Research & Trading Platform
+servers:
+  - url: /api/v1
+    description: Integrated Gateway & Worker API
+
+paths:
+  /health:
+    get:
+      summary: Service Health & Dependency Status
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  version: { type: string }
+                  database: { type: string }
+                  storage: { type: string }
+                  quota_state: { type: string }
+                  timestamp: { type: string }
+
+  /instruments/search:
+    get:
+      summary: Search stocks & indices across CN/US
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: market
+          in: query
+          schema: { type: string, enum: [ALL, CN, US] }
+      responses:
+        '200':
+          description: List of matched instruments
+
+  /markets/overview:
+    get:
+      summary: Global market indices and sector momentum overview
+      responses:
+        '200':
+          description: Realtime market overview
+
+  /quotes/{symbol}:
+    get:
+      summary: Get realtime snapshot quote for instrument
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Realtime quote
+
+  /bars/{symbol}:
+    get:
+      summary: Historical OHLCV bars (qfq/hfq)
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+        - name: period
+          in: query
+          schema: { type: string, default: "1M" }
+        - name: adjust
+          in: query
+          schema: { type: string, default: "qfq" }
+      responses:
+        '200':
+          description: OHLCV bars array
+
+  /factors:
+    get:
+      summary: Get factor library and group returns
+      responses:
+        '200':
+          description: Factor list with IC, IR and distribution
+
+  /strategies:
+    get:
+      summary: List user and system strategies
+    post:
+      summary: Create or validate new strategy DSL
+
+  /backtests:
+    post:
+      summary: Submit new backtest job
+    get:
+      summary: List past backtests
+
+  /backtests/{id}:
+    get:
+      summary: Get backtest metrics & equity curve
+
+  /ai/chat:
+    post:
+      summary: DeepSeek AI quant assistant with SSE streaming & tools
+
+  /usage:
+    get:
+      summary: Get current user & global system usage and storage status

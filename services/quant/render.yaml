@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: aetherquant-quant-service
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: QUANT_SERVICE_TOKEN
+        generateValue: true
+      - key: PYTHONUNBUFFERED
+        value: "1"
