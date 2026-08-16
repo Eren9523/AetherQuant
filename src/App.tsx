@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { LandingPage } from './components/landing/LandingPage';
 import { WorkspaceLayout } from './components/workspace/WorkspaceLayout';
@@ -6,6 +6,10 @@ import { Loader2 } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
   const { currentRoute, isTransitioningToWorkspace } = useApp();
+
+  useEffect(() => {
+    document.title = 'AetherQuant - AI量化研究平台';
+  }, []);
 
   return (
     <div className="relative min-h-screen">
