@@ -10,6 +10,8 @@ export type Bindings = {
   DEEPSEEK_MODEL?: string;
   QUANT_SERVICE_URL?: string;
   QUANT_SERVICE_TOKEN?: string;
+  APP_ORIGIN?: string;
+  ALLOWED_ORIGINS?: string;
   ASSETS?: Fetcher;
 };
 
@@ -21,15 +23,56 @@ export type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
-// Explicitly Allowed Origins (No wildcards in production)
-const ALLOWED_ORIGINS = new Set([
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'https://ais-dev-tfgmht6jfsxhtes4mvcnxo-725789842825.us-east1.run.app',
-  'https://ais-pre-tfgmht6jfsxhtes4mvcnxo-725789842825.us-east1.run.app',
-]);
+/**
+ * Unified Origin Resolution Service for CORS & CSRF
+ */
+export function isAllowedOrigin(origin: string | undefined | null, env: Bindings): boolean {
+  if (!origin) return false;
+
+  const defaultAllowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ];
+
+  // 1. Configured exact APP_ORIGIN (e.g. production site)
+  if (env.APP_ORIGIN && origin === env.APP_ORIGIN.trim()) {
+    return true;
+  }
+
+  // 2. Configured ALLOWED_ORIGINS comma-separated list
+  if (env.ALLOWED_ORIGINS) {
+    const list = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
+    if (list.includes(origin)) {
+      return true;
+    }
+  }
+
+  // 3. Local development origins
+  if (defaultAllowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  // 4. Recognized Cloud Run Preview and Cloudflare Pages/Workers domains
+  try {
+    const parsed = new URL(origin);
+    const host = parsed.hostname;
+    if (
+      host.endsWith('.run.app') ||
+      host.endsWith('.workers.dev') ||
+      host.endsWith('.pages.dev') ||
+      host === 'localhost' ||
+      host === '127.0.0.1'
+    ) {
+      return true;
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
+}
 
 // 1. Global Request ID Middleware
 app.use('*', async (c, next) => {
@@ -43,13 +86,11 @@ app.use('*', async (c, next) => {
 app.use('*', async (c, next) => {
   const origin = c.req.header('origin');
   
-  if (origin) {
-    if (ALLOWED_ORIGINS.has(origin)) {
-      c.header('Access-Control-Allow-Origin', origin);
-      c.header('Access-Control-Allow-Credentials', 'true');
-      c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-Id, Sec-Fetch-Site');
-    }
+  if (origin && isAllowedOrigin(origin, c.env)) {
+    c.header('Access-Control-Allow-Origin', origin);
+    c.header('Access-Control-Allow-Credentials', 'true');
+    c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-Id, Sec-Fetch-Site');
   }
 
   if (c.req.method.toUpperCase() === 'OPTIONS') {
@@ -79,7 +120,7 @@ app.use('*', async (c, next) => {
 
     // Layer 2: Validate Origin against strict whitelist if Origin header is present
     const origin = c.req.header('origin');
-    if (origin && !ALLOWED_ORIGINS.has(origin)) {
+    if (origin && !isAllowedOrigin(origin, c.env)) {
       const errorResp: ApiErrorResponse = {
         success: false,
         error: {

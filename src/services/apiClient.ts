@@ -137,7 +137,7 @@ export class ApiClient {
     path: string,
     body: any,
     onChunk: (text: string) => void,
-    onDone?: (meta?: any) => void,
+    onStreamDone?: (meta?: any) => void,
     onError?: (err: ApiError) => void
   ): Promise<string> {
     try {
@@ -190,7 +190,7 @@ export class ApiClient {
               fullText += event.text;
               onChunk(event.text);
             } else if (event.type === 'done') {
-              if (onDone) onDone(event.meta);
+              if (onStreamDone) onStreamDone(event.meta);
             } else if (event.type === 'error' && event.error) {
               const apiErr = new ApiError(
                 event.error.code || 'AI_PROVIDER_ERROR',
@@ -215,7 +215,6 @@ export class ApiClient {
         }
       }
 
-      if (onDone) onDone();
       return fullText;
     } catch (err: any) {
       const apiErr = err instanceof ApiError ? err : new ApiError('NETWORK_ERROR', err.message || '网络连接中断');

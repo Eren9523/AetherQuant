@@ -29,6 +29,7 @@ import {
   Home,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
 
 interface NavItem {
   id: WorkspaceView;
@@ -242,6 +243,15 @@ export const WorkspaceSidebar: React.FC = () => {
             {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
           </button>
         </div>
+
+        {RUNTIME_CONFIG.isDemoMode && !collapsed && (
+          <div className="px-3 pt-2.5">
+            <div className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 text-[10px] font-semibold flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              <span>演示模式 (Demo Data)</span>
+            </div>
+          </div>
+        )}
 
         {/* Nav list */}
         <div className="overflow-y-auto max-h-[calc(100vh-8rem)] p-2 space-y-4">

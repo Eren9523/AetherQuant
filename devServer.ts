@@ -1,13 +1,14 @@
 /**
  * [AETHERQUANT WORKER DEV SERVER]
  * Official Primary Development Server
- * Runs Cloudflare Worker (Hono) gateway on Port 3000 with Vite frontend integration.
+ * Runs Cloudflare Worker (Hono) gateway on Port 3000 with real Wrangler D1/R2 Platform Proxy.
  */
 import { createServer as createHttpServer } from 'http';
 import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { getRequestListener } from '@hono/node-server';
+import { getPlatformProxy } from 'wrangler';
 import workerApp from './worker/src/index';
 
 dotenv.config();
@@ -15,6 +16,18 @@ dotenv.config();
 async function startWorkerDevServer() {
   const PORT = 3000;
   const isProd = process.env.NODE_ENV === 'production';
+
+  // Initialize Wrangler Platform Proxy for true local D1 & R2 bindings
+  let platformProxy: any = null;
+  try {
+    platformProxy = await getPlatformProxy({
+      configPath: './worker/wrangler.jsonc',
+      persist: { path: './worker/.wrangler/state/v3' },
+    });
+    console.log('[Wrangler Platform Proxy] Initialized real D1 & R2 local runtime bindings.');
+  } catch (err) {
+    console.warn('[Wrangler Platform Proxy] Warning: Could not initialize platform proxy, falling back:', err);
+  }
 
   // Create Vite Server in middleware mode
   let vite: any = null;
@@ -27,15 +40,16 @@ async function startWorkerDevServer() {
 
   // Create worker request listener with injected env bindings
   const workerFetchHandler = (req: any, res: any) => {
-    // Injected environment bindings mimicking Cloudflare Workers runtime
+    // Injected environment bindings from Wrangler runtime + local environment
     const envBindings = {
-      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || '',
-      DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
-      DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      ...(platformProxy ? platformProxy.env : {}),
+      DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || platformProxy?.env?.DEEPSEEK_API_KEY || '',
+      DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL || platformProxy?.env?.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
+      DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL || platformProxy?.env?.DEEPSEEK_MODEL || 'deepseek-chat',
       QUANT_SERVICE_URL: process.env.QUANT_SERVICE_URL || '',
       QUANT_SERVICE_TOKEN: process.env.QUANT_SERVICE_TOKEN || '',
-      DB: undefined as any,
-      DATA_BUCKET: undefined as any,
+      APP_ORIGIN: process.env.APP_ORIGIN || '',
+      ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || '',
     };
 
     const requestListener = getRequestListener(

@@ -379,6 +379,9 @@ export const AutomationService = {
 
 export const MLLabService = {
   async getExperiments(): Promise<MLModelExperiment[]> {
+    if (RUNTIME_CONFIG.isRealMode) {
+      throw new ApiError('SERVICE_NOT_IMPLEMENTED', '机器学习实验中心将在后续阶段上线 (SERVICE_NOT_IMPLEMENTED)。');
+    }
     return mockMLModels;
   },
 };
@@ -481,15 +484,25 @@ export const ResearchService = {
     onChunk: (chunk: string) => void,
     onDone: (fullText: string) => void,
     onError?: (err: ApiError) => void
-  ) {
+  ): Promise<string> {
     const fullPrompt = contextSymbol ? `[标的: ${contextSymbol}] ${prompt}` : prompt;
-    const fullText = await ApiClient.postStream(
-      '/ai/chat',
-      { prompt: fullPrompt },
-      onChunk,
-      () => onDone(fullText),
-      onError
-    );
-    return fullText;
+    try {
+      const fullText = await ApiClient.postStream(
+        '/ai/chat',
+        { prompt: fullPrompt },
+        onChunk,
+        undefined,
+        onError
+      );
+      if (onDone) {
+        onDone(fullText);
+      }
+      return fullText;
+    } catch (err: any) {
+      if (onError && err instanceof ApiError) {
+        onError(err);
+      }
+      throw err;
+    }
   },
 };

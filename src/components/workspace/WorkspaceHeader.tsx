@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Search, Sparkles, RefreshCw, SlidersHorizontal, User } from 'lucide-react';
+import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
 
 export const WorkspaceHeader: React.FC = () => {
   const {
@@ -41,10 +42,21 @@ export const WorkspaceHeader: React.FC = () => {
         <h1 className="text-base font-bold text-neutral-900 tracking-tight">
           {viewTitles[workspaceView] || '工作台'}
         </h1>
-        <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-neutral-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-          <span>A股/美股行情同步正常</span>
-        </div>
+        {RUNTIME_CONFIG.isDemoMode ? (
+          <div
+            id="demo-mode-indicator"
+            className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold"
+            title="当前处于 Demo 演示模式，展示仿真与模拟数据"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span>演示模式 / Demo Data</span>
+          </div>
+        ) : (
+          <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-neutral-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+            <span>A股/美股行情同步正常</span>
+          </div>
+        )}
       </div>
 
       {/* Center Command Search Trigger */}
