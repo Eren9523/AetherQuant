@@ -129,16 +129,19 @@ export const AIResearchView: React.FC = () => {
   }, [selectedStockSymbol]);
 
   const loadThreadsFromDatabase = async () => {
-    const fetchedThreads = await ResearchService.getThreads(historySearch, 30);
-    if (fetchedThreads && fetchedThreads.length > 0) {
-      setThreadsList(fetchedThreads);
-      // Load the most recent or pinned thread
-      const firstThread = fetchedThreads[0];
-      if (firstThread) {
-        selectThread(firstThread.id);
+    try {
+      const fetchedThreads = await ResearchService.getThreads(historySearch, 30);
+      if (fetchedThreads && fetchedThreads.length > 0) {
+        setThreadsList(fetchedThreads);
+        const firstThread = fetchedThreads[0];
+        if (firstThread) {
+          selectThread(firstThread.id);
+        }
+      } else {
+        createNewThread();
       }
-    } else {
-      // Create initial new thread with welcome message
+    } catch (err) {
+      console.warn('Failed to load threads from database, using initial session:', err);
       createNewThread();
     }
   };
@@ -219,8 +222,8 @@ export const AIResearchView: React.FC = () => {
   const getWelcomeMessage = () => ({
     id: 'welcome-msg',
     sender: 'assistant' as const,
-    content: `你好！我是 AetherQuant AI 金融量化研究助手。你可以用自然语言发起多因子选股、行情归因诊股、财报拆解与量化策略回测。例如：“从沪深300中筛选60日动量排名前20%且波动率较低的股票”`,
-    steps: ['已连通 A股/美股实时行情图谱', '挂载 AKShare / SEC EDGAR 数据源', '加载 60+ 经典 Alpha 因子表'],
+    content: `你可以使用 AetherQuant 进行量化研究、策略设计与数据分析；部分行情、因子与文档能力将根据当前已连接的数据服务提供。例如：“从沪深300中筛选60日动量排名前20%且波动率较低的股票”`,
+    steps: ['支持多因子量化研究与策略设计', '支持量化指标归因与智能分析', '数据与行情服务将根据实际连接环境提供'],
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   });
 

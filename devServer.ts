@@ -1,7 +1,10 @@
 /**
  * [AETHERQUANT WORKER DEV SERVER]
- * Official Primary Development Server
- * Runs Cloudflare Worker (Hono) gateway on Port 3000 with real Wrangler D1/R2 Platform Proxy.
+ * Convenience Dev Server / Binding Proxy
+ * NOT Production Runtime Emulator
+ *
+ * Runs Cloudflare Worker (Hono) gateway on Port 3000 with local D1/R2 Platform Proxy.
+ * For official Workerd integration, use `npm run dev:worker` (wrangler dev).
  */
 import { createServer as createHttpServer } from 'http';
 import path from 'path';
@@ -17,14 +20,13 @@ async function startWorkerDevServer() {
   const PORT = 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
-  // Initialize Wrangler Platform Proxy for true local D1 & R2 bindings
+  // Initialize Wrangler Platform Proxy for local D1 & R2 bindings (Convenience Binding Proxy)
   let platformProxy: any = null;
   try {
     platformProxy = await getPlatformProxy({
-      configPath: './worker/wrangler.jsonc',
-      persist: { path: './worker/.wrangler/state/v3' },
+      configPath: './wrangler.jsonc',
     });
-    console.log('[Wrangler Platform Proxy] Initialized real D1 & R2 local runtime bindings.');
+    console.log('[Wrangler Platform Proxy] Initialized local D1 & R2 bindings via root wrangler.jsonc.');
   } catch (err) {
     console.warn('[Wrangler Platform Proxy] Warning: Could not initialize platform proxy, falling back:', err);
   }

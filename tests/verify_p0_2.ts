@@ -119,8 +119,7 @@ async function runVerification() {
   {
     try {
       const platformProxy = await getPlatformProxy({
-        configPath: './worker/wrangler.jsonc',
-        persist: { path: './worker/.wrangler/state/v3' },
+        configPath: './wrangler.jsonc',
       });
 
       const db = platformProxy.env.DB as any;

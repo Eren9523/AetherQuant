@@ -53,8 +53,8 @@ export const WorkspaceHeader: React.FC = () => {
           </div>
         ) : (
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-neutral-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
-            <span>A股/美股行情同步正常</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-neutral-400" />
+            <span>行情服务待接入</span>
           </div>
         )}
       </div>

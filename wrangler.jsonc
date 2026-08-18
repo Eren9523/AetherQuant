@@ -18,7 +18,8 @@
     {
       "binding": "DB",
       "database_name": "aetherquant-db",
-      "database_id": "a431a359-c90a-41d7-9def-b5abf6d2773d"
+      "database_id": "a431a359-c90a-41d7-9def-b5abf6d2773d",
+      "migrations_dir": "worker/migrations"
     }
   ],
   "r2_buckets": [

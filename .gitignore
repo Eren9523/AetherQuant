@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+.wrangler/
+worker/.wrangler/
+**/.wrangler/
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite
+

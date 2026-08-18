@@ -391,61 +391,47 @@ export const MLLabService = {
 // ==========================================
 export const ResearchService = {
   async getThreads(search?: string, limit: number = 20) {
-    try {
-      const queryStr = search ? `?q=${encodeURIComponent(search)}&limit=${limit}` : `?limit=${limit}`;
-      const res = await ApiClient.get<{ count: number; threads: any[] }>(`/research/threads${queryStr}`);
-      if (res && res.threads) {
-        return res.threads;
-      }
-    } catch (e) {
-      console.warn('Failed to fetch research threads:', e);
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return [];
     }
-    return [];
+    const queryStr = search ? `?q=${encodeURIComponent(search)}&limit=${limit}` : `?limit=${limit}`;
+    const res = await ApiClient.get<{ count: number; threads: any[] }>(`/research/threads${queryStr}`);
+    return res?.threads || [];
   },
 
   async getThreadDetail(threadId: string) {
-    try {
-      const res = await ApiClient.get<{ thread: any; messages: any[] }>(`/research/threads/${threadId}`);
-      if (res && res.thread) {
-        return res;
-      }
-    } catch (e) {
-      console.warn(`Failed to fetch thread detail for ${threadId}:`, e);
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return null;
     }
-    return null;
+    return await ApiClient.get<{ thread: any; messages: any[] }>(`/research/threads/${threadId}`);
   },
 
   async createThread(params: { id?: string; title?: string; activeSymbol?: string }) {
-    try {
-      return await ApiClient.post<any>('/research/threads', params);
-    } catch (e) {
-      console.warn('Failed to create research thread:', e);
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return { id: params.id || `demo_${Date.now()}`, title: params.title || '新量化研究会话' };
     }
-    return null;
+    return await ApiClient.post<any>('/research/threads', params);
   },
 
   async updateThread(threadId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }) {
-    try {
-      return await ApiClient.patch<any>(`/research/threads/${threadId}`, updates);
-    } catch (e) {
-      console.warn('Failed to update thread:', e);
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return { id: threadId, ...updates };
     }
+    return await ApiClient.patch<any>(`/research/threads/${threadId}`, updates);
   },
 
   async deleteThread(threadId: string) {
-    try {
-      return await ApiClient.delete<any>(`/research/threads/${threadId}`);
-    } catch (e) {
-      console.warn('Failed to delete thread:', e);
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return { deleted: true };
     }
+    return await ApiClient.delete<any>(`/research/threads/${threadId}`);
   },
 
   async saveHistorySession(session: { id: string; title: string; messages: any[] }) {
-    try {
-      return await ApiClient.post<any>('/research/threads/save', session);
-    } catch (e) {
-      console.warn('Failed to save session:', e);
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return { success: true };
     }
+    return await ApiClient.post<any>('/research/threads/save', session);
   },
 
   async getFeaturedPrompts(params?: any) {
@@ -455,6 +441,9 @@ export const ResearchService = {
         return res.prompts;
       }
     } catch (e) {
+      if (RUNTIME_CONFIG.isRealMode) {
+        throw e;
+      }
       console.warn('Failed to fetch daily featured prompts:', e);
     }
     return null;
@@ -499,9 +488,7 @@ export const ResearchService = {
       }
       return fullText;
     } catch (err: any) {
-      if (onError && err instanceof ApiError) {
-        onError(err);
-      }
+      // Note: ApiClient.postStream has already called onError once. Do not call it again here.
       throw err;
     }
   },

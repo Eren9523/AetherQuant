@@ -1,6 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono } from 'hono';
 import type { ApiErrorResponse, ApiSuccessResponse } from './types/api';
+import { ResearchThreadRepository } from './repositories/researchThreadRepository';
+import { ResearchMessageRepository } from './repositories/researchMessageRepository';
 
 export type Bindings = {
   DB: D1Database;
@@ -25,23 +27,17 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 /**
  * Unified Origin Resolution Service for CORS & CSRF
+ * Strict Exact Whitelist Policy - No wildcard domain matches.
  */
 export function isAllowedOrigin(origin: string | undefined | null, env: Bindings): boolean {
   if (!origin) return false;
-
-  const defaultAllowedOrigins = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-  ];
 
   // 1. Configured exact APP_ORIGIN (e.g. production site)
   if (env.APP_ORIGIN && origin === env.APP_ORIGIN.trim()) {
     return true;
   }
 
-  // 2. Configured ALLOWED_ORIGINS comma-separated list
+  // 2. Configured ALLOWED_ORIGINS comma-separated list of exact origins
   if (env.ALLOWED_ORIGINS) {
     const list = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
     if (list.includes(origin)) {
@@ -49,26 +45,15 @@ export function isAllowedOrigin(origin: string | undefined | null, env: Bindings
     }
   }
 
-  // 3. Local development origins
-  if (defaultAllowedOrigins.includes(origin)) {
+  // 3. Localhost development origins
+  const devOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ];
+  if (devOrigins.includes(origin)) {
     return true;
-  }
-
-  // 4. Recognized Cloud Run Preview and Cloudflare Pages/Workers domains
-  try {
-    const parsed = new URL(origin);
-    const host = parsed.hostname;
-    if (
-      host.endsWith('.run.app') ||
-      host.endsWith('.workers.dev') ||
-      host.endsWith('.pages.dev') ||
-      host === 'localhost' ||
-      host === '127.0.0.1'
-    ) {
-      return true;
-    }
-  } catch {
-    return false;
   }
 
   return false;
@@ -407,6 +392,280 @@ app.post('/api/v1/ai/chat', async (c) => {
     };
     return c.json(errResp, 502);
   }
+});
+
+// ==========================================
+// Research Persistence Endpoints (D1 Real Repository)
+// ==========================================
+
+// Helper to ensure user exists before foreign key insert in P1
+async function ensureUserExists(db: D1Database, userId: string): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO users (id, email, name, role, created_at, updated_at)
+       VALUES (?, ?, ?, 'free', datetime('now'), datetime('now'))`
+    )
+    .bind(userId, `${userId}@aetherquant.internal`, 'Researcher')
+    .run()
+    .catch(() => {});
+}
+
+// 1. List Research Threads
+app.get('/api/v1/research/threads', async (c) => {
+  const reqId = c.get('requestId');
+  if (!c.env.DB) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'D1_NOT_CONFIGURED', message: 'D1 数据库未绑定或不可用' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const query = c.req.query('q');
+  const limit = parseInt(c.req.query('limit') || '30', 10);
+
+  const threadRepo = new ResearchThreadRepository(c.env.DB);
+  const threads = await threadRepo.listForUser(userId, { search: query, limit });
+
+  return c.json({
+    success: true,
+    data: { count: threads.length, threads },
+    request_id: reqId,
+  });
+});
+
+// 2. Create Research Thread
+app.post('/api/v1/research/threads', async (c) => {
+  const reqId = c.get('requestId');
+  if (!c.env.DB) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'D1_NOT_CONFIGURED', message: 'D1 数据库未绑定或不可用' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  await ensureUserExists(c.env.DB, userId);
+
+  const body = await c.req
+    .json<{ id?: string; title?: string; activeSymbol?: string; marketContext?: string }>()
+    .catch((): { id?: string; title?: string; activeSymbol?: string; marketContext?: string } => ({}));
+
+  const threadRepo = new ResearchThreadRepository(c.env.DB);
+  const thread = await threadRepo.create({
+    id: body.id,
+    userId,
+    title: body.title || '新量化研究会话',
+    activeSymbol: body.activeSymbol,
+    marketContext: body.marketContext,
+  });
+
+  return c.json({
+    success: true,
+    data: thread,
+    request_id: reqId,
+  });
+});
+
+// 3. Get Thread Detail with Messages
+app.get('/api/v1/research/threads/:id', async (c) => {
+  const reqId = c.get('requestId');
+  if (!c.env.DB) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'D1_NOT_CONFIGURED', message: 'D1 数据库未绑定或不可用' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const threadId = c.req.param('id');
+
+  const threadRepo = new ResearchThreadRepository(c.env.DB);
+  const messageRepo = new ResearchMessageRepository(c.env.DB);
+
+  const thread = await threadRepo.findByIdForUser(threadId, userId);
+  if (!thread) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'THREAD_NOT_FOUND', message: '会话不存在或无访问权限' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 404);
+  }
+
+  const messages = await messageRepo.listByThreadForUser(threadId, userId);
+
+  return c.json({
+    success: true,
+    data: { thread, messages },
+    request_id: reqId,
+  });
+});
+
+// 4. Update Thread (Title, Pin, Archive)
+app.patch('/api/v1/research/threads/:id', async (c) => {
+  const reqId = c.get('requestId');
+  if (!c.env.DB) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'D1_NOT_CONFIGURED', message: 'D1 数据库未绑定或不可用' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const threadId = c.req.param('id');
+  const body = await c.req
+    .json<{ title?: string; pinned?: boolean; archived?: boolean; activeSymbol?: string }>()
+    .catch(() => ({}));
+
+  const threadRepo = new ResearchThreadRepository(c.env.DB);
+  const updated = await threadRepo.updateForUser(threadId, userId, body);
+
+  if (!updated) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'THREAD_NOT_FOUND', message: '会话不存在或无修改权限' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 404);
+  }
+
+  return c.json({
+    success: true,
+    data: updated,
+    request_id: reqId,
+  });
+});
+
+// 5. Soft Delete Thread
+app.delete('/api/v1/research/threads/:id', async (c) => {
+  const reqId = c.get('requestId');
+  if (!c.env.DB) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'D1_NOT_CONFIGURED', message: 'D1 数据库未绑定或不可用' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const threadId = c.req.param('id');
+
+  const threadRepo = new ResearchThreadRepository(c.env.DB);
+  const deleted = await threadRepo.softDeleteForUser(threadId, userId);
+
+  if (!deleted) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'THREAD_NOT_FOUND', message: '会话不存在或无删除权限' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 404);
+  }
+
+  return c.json({
+    success: true,
+    data: { deleted: true },
+    request_id: reqId,
+  });
+});
+
+// 6. Record/Append Message in Thread
+app.post('/api/v1/research/threads/:id/messages', async (c) => {
+  const reqId = c.get('requestId');
+  if (!c.env.DB) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'D1_NOT_CONFIGURED', message: 'D1 数据库未绑定或不可用' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  await ensureUserExists(c.env.DB, userId);
+
+  const threadId = c.req.param('id');
+  const threadRepo = new ResearchThreadRepository(c.env.DB);
+  const thread = await threadRepo.findByIdForUser(threadId, userId);
+
+  if (!thread) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'THREAD_NOT_FOUND', message: '会话不存在或无访问权限' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 404);
+  }
+
+  type MessageBody = {
+    role?: 'user' | 'assistant';
+    content?: string;
+    clientMessageId?: string;
+    provider?: string;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    latencyMs?: number;
+    status?: 'streaming' | 'completed' | 'failed';
+  };
+
+  const body = await c.req
+    .json<MessageBody>()
+    .catch((): MessageBody => ({ role: 'user', content: '' }));
+
+  const messageRepo = new ResearchMessageRepository(c.env.DB);
+  let message;
+
+  if (body.role !== 'assistant') {
+    message = await messageRepo.createUserMessage({
+      threadId,
+      userId,
+      clientMessageId: body.clientMessageId,
+      content: body.content || '',
+    });
+    await threadRepo.touchAfterMessage(threadId, userId, 1);
+  } else {
+    const placeholder = await messageRepo.createAssistantPlaceholder({
+      threadId,
+      userId,
+      clientMessageId: body.clientMessageId,
+      provider: body.provider,
+      model: body.model,
+    });
+
+    if (body.status === 'completed' || body.content) {
+      message = await messageRepo.completeAssistantMessage({
+        messageId: placeholder.id,
+        threadId,
+        userId,
+        content: body.content || '',
+        provider: body.provider,
+        model: body.model,
+        inputTokens: body.inputTokens,
+        outputTokens: body.outputTokens,
+        latencyMs: body.latencyMs,
+      });
+    } else {
+      message = placeholder;
+    }
+    await threadRepo.touchAfterMessage(threadId, userId, 1);
+  }
+
+  return c.json({
+    success: true,
+    data: message,
+    request_id: reqId,
+  });
 });
 
 export default app;
