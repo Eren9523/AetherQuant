@@ -12,6 +12,8 @@ import { DeepSeekProxyService } from '../ai/deepseekProxy';
 import { DocumentParserEngine } from '../documents/documentParser';
 import { PaperTradingService } from '../paper/paperTradingService';
 import { JobOrchestrator } from '../automation/jobOrchestrator';
+import { ResearchHistoryService } from '../ai/researchHistoryService';
+import { PromptRecommendationService, DailyPromptGenerationJob } from '../ai/promptService';
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 export const apiRouter = Router();
@@ -185,7 +187,7 @@ apiRouter.get('/backtests', (req: Request, res: Response) => {
   res.json(backtests);
 });
 
-// 8. DeepSeek AI Chat (SSE Stream)
+// 8. DeepSeek AI Chat (SSE Stream & JSON Mode)
 apiRouter.post('/ai/chat', async (req: Request, res: Response) => {
   const { userId, role } = getUserContext(req);
   const quotaCheck = await UsageQuotaService.checkAiQuota(userId, role);
@@ -196,11 +198,25 @@ apiRouter.post('/ai/chat', async (req: Request, res: Response) => {
   }
 
   const messages = req.body.messages || [{ role: 'user', content: req.body.prompt || '' }];
-  await DeepSeekProxyService.handleChatStream({
-    messages,
-    userId,
-    res,
-  });
+  const wantsJson = req.body.stream === false || (req.headers.accept === 'application/json' && req.body.stream !== true);
+
+  if (wantsJson) {
+    try {
+      const result = await DeepSeekProxyService.handleChatJson({
+        messages,
+        userId,
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'AI request failed' });
+    }
+  } else {
+    await DeepSeekProxyService.handleChatStream({
+      messages,
+      userId,
+      res,
+    });
+  }
 });
 
 // 9. Document RAG & File Upload
@@ -259,3 +275,365 @@ apiRouter.post('/automation/jobs/:id/run', (req: Request, res: Response) => {
   const result = JobOrchestrator.runJobNow(req.params.id);
   res.json(result);
 });
+
+// ==========================================
+// 12. V1 Research Persistent History APIs
+// ==========================================
+
+// List user's active research threads (pinned first, then last_message_at DESC)
+apiRouter.get('/v1/research/threads', (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const search = req.query.q as string;
+  const limit = req.query.limit ? Number(req.query.limit) : 20;
+
+  const threads = ResearchHistoryService.getUserThreads({
+    userId,
+    search,
+    limit,
+  });
+
+  res.json({ count: threads.length, threads });
+});
+
+// Create a new research thread
+apiRouter.post('/v1/research/threads', (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const { id, title, activeSymbol, marketContext } = req.body;
+
+  const threadId = id || `thread_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const thread = ResearchHistoryService.createOrUpdateThread({
+    threadId,
+    userId,
+    title,
+    activeSymbol,
+    marketContext,
+  });
+
+  res.json({ success: true, thread });
+});
+
+// Get detail of a specific thread (including messages)
+apiRouter.get('/v1/research/threads/:id', (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const threadId = req.params.id;
+
+  const { thread, messages } = ResearchHistoryService.getThreadDetail(threadId, userId);
+  if (!thread) {
+    res.status(404).json({ error: 'Research thread not found' });
+    return;
+  }
+
+  res.json({ thread, messages });
+});
+
+// Get messages for lazy loading
+apiRouter.get('/v1/research/threads/:id/messages', (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const threadId = req.params.id;
+
+  const { thread, messages } = ResearchHistoryService.getThreadDetail(threadId, userId);
+  if (!thread) {
+    res.status(404).json({ error: 'Thread not found' });
+    return;
+  }
+
+  res.json({ threadId, count: messages.length, messages });
+});
+
+// Update thread (rename, toggle pin, toggle archive)
+apiRouter.patch('/v1/research/threads/:id', (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const threadId = req.params.id;
+  const { title, pinned, archived } = req.body;
+
+  const updates: any = {};
+  if (typeof title === 'string') updates.title = title;
+  if (typeof pinned === 'boolean') updates.pinned = pinned;
+  if (typeof archived === 'boolean') updates.archived = archived;
+  updates.updated_at = new Date().toISOString();
+
+  const success = ResearchHistoryService.updateThread(threadId, updates);
+  res.json({ success, threadId });
+});
+
+// Soft delete thread
+apiRouter.delete('/v1/research/threads/:id', (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const threadId = req.params.id;
+
+  const success = ResearchHistoryService.softDeleteThread(threadId, userId);
+  res.json({ success, threadId });
+});
+
+// Post a user message to a thread and receive SSE stream / saved assistant message
+apiRouter.post('/v1/research/threads/:id/messages', async (req: Request, res: Response) => {
+  const { userId, role } = getUserContext(req);
+  const threadId = req.params.id;
+  const { content, activeSymbol } = req.body;
+
+  if (!content) {
+    res.status(400).json({ error: 'Message content required' });
+    return;
+  }
+
+  // Check AI quota
+  const quotaCheck = await UsageQuotaService.checkAiQuota(userId, role);
+  if (!quotaCheck.allowed) {
+    res.status(429).json({ error: quotaCheck.reason });
+    return;
+  }
+
+  // 1. Ensure thread exists or create it
+  ResearchHistoryService.createOrUpdateThread({
+    threadId,
+    userId,
+    activeSymbol,
+  });
+
+  // 2. Persist user message to D1
+  const userMsg = ResearchHistoryService.appendMessage({
+    threadId,
+    userId,
+    role: 'user',
+    content,
+    status: 'completed',
+  });
+
+  // Fetch thread messages for conversation context
+  const { messages: historyMessages } = ResearchHistoryService.getThreadDetail(threadId, userId);
+
+  const formattedChatMsgs = historyMessages.map((m) => ({
+    role: m.role as 'user' | 'assistant' | 'system',
+    content: m.content,
+  }));
+
+  // 3. Trigger DeepSeek SSE stream and persist assistant response
+  await DeepSeekProxyService.handleChatStream({
+    messages: formattedChatMsgs,
+    userId,
+    res,
+  });
+});
+
+// ==========================================
+// 13. Dynamic Prompt Recommendation APIs
+// ==========================================
+
+// Get 6 recommended prompt cards for UI without invoking DeepSeek directly
+apiRouter.get('/v1/research/prompts', (req: Request, res: Response) => {
+  const limit = req.query.limit ? Number(req.query.limit) : 6;
+  const market = req.query.market as string;
+  const activeSymbol = req.query.active_symbol as string;
+  const seed = req.query.seed ? Number(req.query.seed) : undefined;
+
+  const prompts = PromptRecommendationService.getPromptsForUser({
+    limit,
+    market,
+    activeSymbol,
+    seed,
+  });
+
+  res.json({ count: prompts.length, prompts });
+});
+
+// Admin trigger for daily DeepSeek prompt generation job
+apiRouter.post('/v1/admin/research/prompts/regenerate', async (req: Request, res: Response) => {
+  const overrideDate = req.body.date as string;
+  const result = await DailyPromptGenerationJob.runJob(overrideDate);
+  res.json(result);
+});
+
+// 12. Persistent Chat History (Cloudflare D1 + R2 Dual Engine)
+apiRouter.get('/history/sessions', (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  let sessions = d1Client.getTable('ai_sessions').filter((s: any) => s.user_id === userId);
+
+  // Default initial session if empty
+  if (sessions.length === 0) {
+    const defaultSession = {
+      id: 'session_init_001',
+      user_id: userId,
+      title: '沪深300低波动动量策略筛选',
+      created_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      updated_at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      messages_json: JSON.stringify([
+        {
+          id: 'welcome-msg',
+          sender: 'assistant',
+          content: `你好！我是 AetherQuant AI 金融量化研究助手。你可以用自然语言发起多因子选股、行情归因诊股、财报拆解与量化策略回测。例如：“从沪深300中筛选60日动量排名前20%且波动率较低的股票”`,
+          steps: ['已连通 A股/美股实时行情图谱', '挂载 AKShare / SEC EDGAR 数据源', '加载 60+ 经典 Alpha 因子表'],
+        },
+      ]),
+    };
+    d1Client.insertRecord('ai_sessions', defaultSession);
+    // Backup to R2 Storage for safety
+    r2Client.saveObject(`history/${userId}/${defaultSession.id}.json`, Buffer.from(defaultSession.messages_json, 'utf-8'), {
+      ownerId: userId,
+      category: 'documents',
+      isPermanent: true,
+    });
+    sessions = [defaultSession];
+  }
+
+  // Sort descending by updated_at
+  sessions.sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  res.json(sessions);
+});
+
+apiRouter.get('/history/sessions/:id', async (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const sessionId = req.params.id;
+
+  // 1. Try fetching from D1
+  const session = d1Client.getTable('ai_sessions').find((s: any) => s.id === sessionId && s.user_id === userId);
+  if (session && session.messages_json) {
+    try {
+      const messages = JSON.parse(session.messages_json);
+      res.json({ session, messages });
+      return;
+    } catch (e) {}
+  }
+
+  // 2. Fallback attempt from R2 Storage
+  const r2Buffer = await r2Client.getObject(`history/${userId}/${sessionId}.json`);
+  if (r2Buffer) {
+    try {
+      const messages = JSON.parse(r2Buffer.toString());
+      res.json({ session: session || { id: sessionId, title: '历史会话记录' }, messages });
+      return;
+    } catch (e) {}
+  }
+
+  res.status(404).json({ error: 'Session not found' });
+});
+
+apiRouter.post('/history/sessions', async (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const { id, title, messages } = req.body;
+
+  if (!id || !Array.isArray(messages)) {
+    res.status(400).json({ error: 'Invalid payload' });
+    return;
+  }
+
+  const messagesJson = JSON.stringify(messages);
+  const existing = d1Client.getTable('ai_sessions').find((s: any) => s.id === id);
+
+  if (existing) {
+    d1Client.updateRecord('ai_sessions', id, {
+      title: title || existing.title,
+      messages_json: messagesJson,
+      updated_at: new Date().toISOString(),
+    });
+  } else {
+    d1Client.insertRecord('ai_sessions', {
+      id,
+      user_id: userId,
+      title: title || '新量化研究',
+      messages_json: messagesJson,
+      pinned: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  // Save/Update backup to R2 object storage for true R2 database persistence
+  try {
+    await r2Client.saveObject(`history/${userId}/${id}.json`, Buffer.from(messagesJson, 'utf-8'), {
+      ownerId: userId,
+      category: 'documents',
+      contentType: 'application/json',
+    });
+  } catch (e) {
+    console.warn('Failed to save session backup to R2:', e);
+  }
+
+  res.json({ success: true, sessionId: id });
+});
+
+apiRouter.patch('/history/sessions/:id/pin', async (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const sessionId = req.params.id;
+  const { pinned } = req.body;
+
+  const session = d1Client.getTable('ai_sessions').find((s: any) => s.id === sessionId && s.user_id === userId);
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+
+  d1Client.updateRecord('ai_sessions', sessionId, {
+    pinned: Boolean(pinned),
+    updated_at: new Date().toISOString(),
+  });
+
+  res.json({ success: true, sessionId, pinned: Boolean(pinned) });
+});
+
+apiRouter.patch('/history/sessions/:id/rename', async (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const sessionId = req.params.id;
+  const { title } = req.body;
+
+  if (!title) {
+    res.status(400).json({ error: 'Title is required' });
+    return;
+  }
+
+  const session = d1Client.getTable('ai_sessions').find((s: any) => s.id === sessionId && s.user_id === userId);
+  if (!session) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+
+  d1Client.updateRecord('ai_sessions', sessionId, {
+    title,
+    updated_at: new Date().toISOString(),
+  });
+
+  res.json({ success: true, sessionId, title });
+});
+
+apiRouter.delete('/history/sessions/:id', async (req: Request, res: Response) => {
+  const { userId } = getUserContext(req);
+  const sessionId = req.params.id;
+
+  d1Client.deleteRecord('ai_sessions', sessionId);
+  try {
+    await r2Client.deleteObject(`history/${userId}/${sessionId}.json`);
+  } catch (e) {}
+
+  res.json({ success: true, sessionId });
+});
+
+// 13. Daily Rolling Fresh Prompts Discovery API (/api/v1/research/prompts)
+apiRouter.get('/v1/research/prompts', (req: Request, res: Response) => {
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 6;
+  const market = req.query.market as string;
+  const activeSymbol = req.query.activeSymbol as string;
+  const seed = req.query.seed ? parseInt(req.query.seed as string, 10) : undefined;
+
+  // Draws purely from D1 3-Day Rolling Pool + Stable Templates (NO DEEPSEEK CALL)
+  const prompts = PromptRecommendationService.getPromptsForUser({
+    limit,
+    market,
+    activeSymbol,
+    seed,
+  });
+
+  res.json({
+    count: prompts.length,
+    prompts,
+  });
+});
+
+// Admin endpoint: Trigger daily prompt generation & 3-day expiration cleanup
+apiRouter.post('/v1/admin/research/prompts/generate-daily', async (req: Request, res: Response) => {
+  try {
+    const result = await DailyPromptGenerationJob.runJob();
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error?.message || 'Failed to generate daily prompts' });
+  }
+});
+

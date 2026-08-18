@@ -1,4 +1,5 @@
 import { d1Client } from '../db/d1Client';
+import { DailyPromptGenerationJob } from '../ai/promptService';
 
 export interface JobRecord {
   id: string;
@@ -16,6 +17,16 @@ export class JobOrchestrator {
     let jobs = d1Client.getTable<JobRecord>('jobs');
     if (jobs.length === 0) {
       const defaultJobs: JobRecord[] = [
+        {
+          id: 'job_daily_prompt_pool',
+          name: 'DeepSeek-V4-Flash 每日 50 前沿量化推荐词库生成',
+          cronExpr: '0 6 * * *',
+          category: 'ai_synthesis',
+          isActive: true,
+          lastStatus: 'success',
+          lastRunAt: new Date(Date.now() - 3600 * 1000 * 2).toISOString(),
+          nextRunAt: new Date(Date.now() + 3600 * 1000 * 22).toISOString(),
+        },
         {
           id: 'job_sync_cn',
           name: 'A股每日收盘数据同步 (AKShare / 日频 QFQ)',
@@ -63,7 +74,16 @@ export class JobOrchestrator {
     return jobs;
   }
 
-  public static runJobNow(jobId: string) {
+  public static async runJobNow(jobId: string) {
+    if (jobId === 'job_daily_prompt_pool') {
+      const res = await DailyPromptGenerationJob.runJob();
+      d1Client.updateRecord<JobRecord>('jobs', jobId, {
+        lastStatus: res.success ? 'success' : 'failed',
+        lastRunAt: new Date().toISOString(),
+      });
+      return { success: res.success, jobId, message: res.message };
+    }
+
     d1Client.updateRecord<JobRecord>('jobs', jobId, {
       lastStatus: 'success',
       lastRunAt: new Date().toISOString(),

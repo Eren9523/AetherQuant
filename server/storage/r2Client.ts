@@ -175,6 +175,21 @@ export class R2StorageClient {
     return null;
   }
 
+  public async deleteObject(objectKey: string): Promise<boolean> {
+    const filePath = path.join(this.storageDir, objectKey.replace(/\//g, '_'));
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (e) {}
+    }
+    const objects = d1Client.getTable<StorageObjectMetadata>('storage_objects');
+    const match = objects.find((o) => o.objectKey === objectKey);
+    if (match) {
+      d1Client.deleteRecord('storage_objects', match.id);
+    }
+    return true;
+  }
+
   public async runStorageReconciliation() {
     // Rule 23: Reconcile D1 storage_objects and cleanup expired files
     const now = new Date().toISOString();

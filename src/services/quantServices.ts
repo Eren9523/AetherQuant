@@ -381,19 +381,153 @@ export const MLLabService = {
 };
 
 export const ResearchService = {
+  // V1 persistent thread APIs
+  async getThreads(search?: string, limit: number = 20) {
+    try {
+      const queryStr = search ? `?q=${encodeURIComponent(search)}&limit=${limit}` : `?limit=${limit}`;
+      const res = await ApiClient.get<{ count: number; threads: any[] }>(`/v1/research/threads${queryStr}`);
+      if (res && res.threads) {
+        return res.threads;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch v1 research threads:', e);
+    }
+    return [];
+  },
+
+  async getThreadDetail(threadId: string) {
+    try {
+      const res = await ApiClient.get<{ thread: any; messages: any[] }>(`/v1/research/threads/${threadId}`);
+      if (res && res.thread) {
+        return res;
+      }
+    } catch (e) {
+      console.warn(`Failed to fetch thread detail for ${threadId}:`, e);
+    }
+    return null;
+  },
+
+  async createThread(params: { id?: string; title?: string; activeSymbol?: string; marketContext?: string }) {
+    try {
+      const res = await ApiClient.post<{ success: boolean; thread: any }>('/v1/research/threads', params);
+      return res.thread;
+    } catch (e) {
+      console.warn('Failed to create thread:', e);
+      return null;
+    }
+  },
+
+  async updateThread(threadId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }) {
+    try {
+      const res = await ApiClient.patch<{ success: boolean; threadId: string }>(`/v1/research/threads/${threadId}`, updates);
+      return res.success;
+    } catch (e) {
+      console.warn('Failed to update thread:', e);
+      return false;
+    }
+  },
+
+  async deleteThread(threadId: string) {
+    try {
+      const res = await ApiClient.delete<{ success: boolean; threadId: string }>(`/v1/research/threads/${threadId}`);
+      return res.success;
+    } catch (e) {
+      console.warn('Failed to delete thread:', e);
+      return false;
+    }
+  },
+
+  // V1 Smart Prompt Recommendation Service API
+  async getRecommendedPrompts(params?: { limit?: number; market?: string; activeSymbol?: string; seed?: number }) {
+    try {
+      const queryParts: string[] = [];
+      if (params?.limit) queryParts.push(`limit=${params.limit}`);
+      if (params?.market) queryParts.push(`market=${encodeURIComponent(params.market)}`);
+      if (params?.activeSymbol) queryParts.push(`active_symbol=${encodeURIComponent(params.activeSymbol)}`);
+      if (params?.seed !== undefined) queryParts.push(`seed=${params.seed}`);
+
+      const queryString = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+      const res = await ApiClient.get<{ count: number; prompts: any[] }>(`/v1/research/prompts${queryString}`);
+      if (res && res.prompts && res.prompts.length > 0) {
+        return res.prompts;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch recommended prompts:', e);
+    }
+    return null;
+  },
+
+  async getHistorySessions() {
+    try {
+      const res = await ApiClient.get<any[]>('/history/sessions');
+      if (res && Array.isArray(res)) {
+        return res.map((s: any) => ({
+          id: s.id,
+          title: s.title,
+          date: s.updated_at ? new Date(s.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '刚刚',
+          updatedAt: s.updated_at,
+          messages: s.messages_json ? JSON.parse(s.messages_json) : [],
+        }));
+      }
+    } catch (e) {
+      console.warn('Fallback to local storage sessions:', e);
+    }
+    return null;
+  },
+
+  async getSessionDetail(id: string) {
+    try {
+      const res = await ApiClient.get<any>(`/history/sessions/${id}`);
+      if (res && res.messages) {
+        return res;
+      }
+    } catch (e) {}
+    return null;
+  },
+
+  async saveHistorySession(session: { id: string; title: string; messages: any[] }) {
+    try {
+      const res = await ApiClient.post<any>('/history/sessions', session);
+      return res;
+    } catch (e) {
+      console.warn('Failed to save session to R2/D1:', e);
+    }
+  },
+
+  async deleteHistorySession(id: string) {
+    try {
+      await ApiClient.delete<any>(`/history/sessions/${id}`);
+    } catch (e) {}
+  },
+
+  async getFeaturedPrompts() {
+    try {
+      const res = await ApiClient.get<{ prompts: any[] }>('/prompts/featured');
+      if (res && res.prompts && res.prompts.length > 0) {
+        return res.prompts;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch daily featured prompts:', e);
+    }
+    return null;
+  },
+
   async queryAI(prompt: string, contextSymbol?: string) {
     try {
       const fullPrompt = contextSymbol ? `[标的: ${contextSymbol}] ${prompt}` : prompt;
-      const res = await ApiClient.post<any>('/ai/chat', { prompt: fullPrompt });
+      const res = await ApiClient.post<any>('/ai/chat', { prompt: fullPrompt, stream: false });
       if (res && res.text) {
         return {
           text: res.text,
-          steps: ['连接 AKShare 行情数据库', '多因子特征工程与截面计算', 'DeepSeek 量化大模型生成'],
+          steps: res.steps || ['连接 AKShare 行情数据库', '多因子特征工程与截面计算', 'DeepSeek 量化大模型生成'],
+          resultCard: res.resultCard,
         };
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('API chat query error, falling back:', e);
+    }
 
-    // Fallback domain analysis
+    // Fallback domain analysis if API failed
     if (prompt.includes('沪深300') || prompt.includes('动量')) {
       return {
         text: `已完成全市场多因子扫描。根据您的策略需求（沪深300指数成分股，60日趋势动量 top 10%，且20日年化波动率 < 22%），我们筛选出了具备高 Alpha 确定性的目标组合。`,
@@ -415,20 +549,42 @@ export const ResearchService = {
           ],
         },
       };
-    } else if (contextSymbol) {
-      return {
-        text: `针对标的 [${contextSymbol}] 的 AI 深度研究：当前因子综合得分 88.5，位于行业同类的前 8% 分位。近 20 日主力资金呈现持续净流入，基本面 ROE TTM 与动量因子协同共振，下行风险收益比极其优秀。`,
-        steps: [
-          '解析 K 线筹码分布与关键支撑位',
-          '计算多因子分位数与同业对比矩阵',
-          '搜集近 30 天券商研报与 AI 舆情评分',
-        ],
-      };
     }
 
     return {
-      text: `AetherQuant AI 研究助手已就绪。我理解当前市场宏观结构与行业因子轮动，您可以让我帮您筛选股票、解析财报文档、评估策略夏普比率或构建 ML 因子模型。`,
+      text: `您好！我是 AetherQuant AI 金融量化研究助手。您可以让我帮您筛选多因子股票、诊断个股筹码分布、编写策略 DSL 或测试夏普比率。`,
       steps: ['解析用户问题语义', '连接全局行情与因子知识库', '生成结构化分析报告'],
     };
+  },
+
+  async queryAIStream(
+    prompt: string,
+    contextSymbol: string | undefined,
+    onChunk: (chunk: string) => void,
+    onDone: (fullText: string) => void,
+    onError?: (err: Error) => void
+  ) {
+    const fullPrompt = contextSymbol ? `[标的: ${contextSymbol}] ${prompt}` : prompt;
+    try {
+      const fullText = await ApiClient.postStream(
+        '/ai/chat',
+        { prompt: fullPrompt },
+        onChunk,
+        () => onDone(fullText),
+        onError
+      );
+      return fullText;
+    } catch (e: any) {
+      console.warn('Stream failed, trying fallback JSON mode:', e);
+      try {
+        const fallbackRes = await this.queryAI(prompt, contextSymbol);
+        onChunk(fallbackRes.text);
+        onDone(fallbackRes.text);
+        return fallbackRes.text;
+      } catch (err: any) {
+        if (onError) onError(err);
+        throw err;
+      }
+    }
   },
 };

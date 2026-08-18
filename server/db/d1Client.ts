@@ -62,7 +62,8 @@ class D1DatabaseClient {
       'strategies', 'strategy_versions', 'backtests', 'backtest_artifacts',
       'ai_sessions', 'ai_messages', 'jobs', 'job_runs', 'data_quality_reports',
       'paper_accounts', 'paper_positions', 'paper_orders', 'paper_trades',
-      'usage_daily', 'storage_objects', 'system_usage', 'audit_logs', 'system_settings'
+      'usage_daily', 'storage_objects', 'system_usage', 'audit_logs', 'system_settings',
+      'research_threads', 'research_messages', 'daily_prompt_suggestions', 'prompt_generation_runs'
     ];
 
     for (const tbl of coreTables) {
@@ -192,7 +193,7 @@ class D1DatabaseClient {
     return record;
   }
 
-  public updateRecord<T extends { id?: string }>(tableName: string, id: string, updates: Partial<T>): boolean {
+  public updateRecord<T = any>(tableName: string, id: string, updates: Record<string, any>): boolean {
     const list = this.localTables[tableName];
     if (!list) return false;
     const idx = list.findIndex((item) => item.id === id);
