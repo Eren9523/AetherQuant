@@ -513,48 +513,16 @@ export const ResearchService = {
   },
 
   async queryAI(prompt: string, contextSymbol?: string) {
-    try {
-      const fullPrompt = contextSymbol ? `[标的: ${contextSymbol}] ${prompt}` : prompt;
-      const res = await ApiClient.post<any>('/ai/chat', { prompt: fullPrompt, stream: false });
-      if (res && res.text) {
-        return {
-          text: res.text,
-          steps: res.steps || ['连接 AKShare 行情数据库', '多因子特征工程与截面计算', 'DeepSeek 量化大模型生成'],
-          resultCard: res.resultCard,
-        };
-      }
-    } catch (e) {
-      console.warn('API chat query error, falling back:', e);
-    }
-
-    // Fallback domain analysis if API failed
-    if (prompt.includes('沪深300') || prompt.includes('动量')) {
+    const fullPrompt = contextSymbol ? `[标的: ${contextSymbol}] ${prompt}` : prompt;
+    const res = await ApiClient.post<any>('/ai/chat', { prompt: fullPrompt, stream: false });
+    if (res && res.text) {
       return {
-        text: `已完成全市场多因子扫描。根据您的策略需求（沪深300指数成分股，60日趋势动量 top 10%，且20日年化波动率 < 22%），我们筛选出了具备高 Alpha 确定性的目标组合。`,
-        steps: [
-          '步骤 1: 锁定期 沪深300 成分股池 (300 只标的)',
-          '步骤 2: 提取 60日对数收益率 并进行 MAD 截面去极值',
-          '步骤 3: 结合 20日低波动率 与 5日成交量突破因子',
-          '步骤 4: 执行约束条件筛选，剔除 ST 与高估值异常股',
-        ],
-        resultCard: {
-          type: 'stockRank',
-          title: ' AI 动量低吸候选 TOP 5',
-          items: [
-            { symbol: '300750.SZ', name: '宁德时代', score: 94.2, reason: '放量突破60日均线，电池装机量大幅超预期' },
-            { symbol: '600519.SH', name: '贵州茅台', score: 91.8, reason: '动量因子排名 92 分位，回撤控制优异' },
-            { symbol: '002594.SZ', name: '比亚迪', score: 89.5, reason: '海外交付放量，ROE TTM 提升 2.4%' },
-            { symbol: '300059.SZ', name: '东方财富', score: 88.1, reason: '券商板块高弹性动量标的，换手率健康' },
-            { symbol: '600036.SH', name: '招商银行', score: 86.4, reason: '息差企稳，低波动高股息防御性极佳' },
-          ],
-        },
+        text: res.text,
+        steps: res.steps || ['连接 AKShare 行情数据库', '多因子特征工程与截面计算', 'DeepSeek 量化大模型生成'],
+        resultCard: res.resultCard,
       };
     }
-
-    return {
-      text: `您好！我是 AetherQuant AI 金融量化研究助手。您可以让我帮您筛选多因子股票、诊断个股筹码分布、编写策略 DSL 或测试夏普比率。`,
-      steps: ['解析用户问题语义', '连接全局行情与因子知识库', '生成结构化分析报告'],
-    };
+    throw new Error(res?.error?.message || 'AI 服务响应异常');
   },
 
   async queryAIStream(
@@ -575,16 +543,9 @@ export const ResearchService = {
       );
       return fullText;
     } catch (e: any) {
-      console.warn('Stream failed, trying fallback JSON mode:', e);
-      try {
-        const fallbackRes = await this.queryAI(prompt, contextSymbol);
-        onChunk(fallbackRes.text);
-        onDone(fallbackRes.text);
-        return fallbackRes.text;
-      } catch (err: any) {
-        if (onError) onError(err);
-        throw err;
-      }
+      console.error('Stream query failed with upstream error:', e);
+      if (onError) onError(e);
+      throw e;
     }
   },
 };

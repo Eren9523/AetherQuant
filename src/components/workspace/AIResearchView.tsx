@@ -328,14 +328,17 @@ export const AIResearchView: React.FC = () => {
           ];
         }
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to query AI stream:', err);
+      const errorMessage = err?.message || '无法连接到 AI 服务，请检查上游配置与网络状态';
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMsgId
             ? {
                 ...msg,
-                content: accumulatedText || '您好！我是 AetherQuant AI 量化研究助手。当前已连通 A 股与美股全市场行情和因子库，请告诉我您的具体策略或选股需求。',
+                content: accumulatedText
+                  ? `${accumulatedText}\n\n⚠️ **[传输中断]**: ${errorMessage}`
+                  : `⚠️ **AI 服务调用失败**: ${errorMessage}\n\n请在环境变量中检查 \`DEEPSEEK_API_KEY\` 配置，或稍后重试。`,
               }
             : msg
         )

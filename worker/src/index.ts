@@ -1,6 +1,7 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { ApiErrorResponse, ApiSuccessResponse } from './types/api';
 
 export type Bindings = {
   DB: D1Database;
@@ -8,145 +9,250 @@ export type Bindings = {
   DEEPSEEK_API_KEY?: string;
   DEEPSEEK_BASE_URL?: string;
   DEEPSEEK_MODEL?: string;
+  QUANT_SERVICE_URL?: string;
+  QUANT_SERVICE_TOKEN?: string;
   ASSETS?: Fetcher;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+export type Variables = {
+  requestId: string;
+  authenticatedUserId?: string;
+  userRole?: string;
+};
 
-// Global CORS Middleware
+const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+
+// 1. Global Request ID Middleware
+app.use('*', async (c, next) => {
+  const reqId = c.req.header('x-request-id') || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  c.set('requestId', reqId);
+  c.header('X-Request-Id', reqId);
+  await next();
+});
+
+// 2. Global CORS Middleware
 app.use('*', cors({
-  origin: '*',
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  origin: (origin) => {
+    // Allow local development and same-origin / cloudflare deployed origins
+    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('.run.app') || origin.includes('.workers.dev') || origin.includes('.pages.dev')) {
+      return origin || '*';
+    }
+    return origin;
+  },
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id', 'Sec-Fetch-Site'],
+  credentials: true,
 }));
 
-// 1. Health Check Endpoint
+// 3. Strict CSRF Middleware for state-mutating requests (POST, PUT, PATCH, DELETE)
+app.use('*', async (c, next) => {
+  const method = c.req.method.toUpperCase();
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    const secFetchSite = c.req.header('sec-fetch-site');
+    // Block direct untrusted cross-site state mutations if Sec-Fetch-Site is cross-site
+    if (secFetchSite === 'cross-site') {
+      const errorResp: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'CSRF_BLOCKED',
+          message: 'Cross-site request blocked by CSRF policy',
+        },
+        request_id: c.get('requestId'),
+      };
+      return c.json(errorResp, 403);
+    }
+  }
+  await next();
+});
+
+// 4. Global Unified Error Handler
+app.onError((err, c) => {
+  const reqId = c.get('requestId') || 'unknown';
+  console.error(`[Worker Error][${reqId}]`, err);
+  const errorResp: ApiErrorResponse = {
+    success: false,
+    error: {
+      code: 'INTERNAL_SERVER_ERROR',
+      message: err.message || 'An unexpected internal error occurred',
+    },
+    request_id: reqId,
+  };
+  return c.json(errorResp, 500);
+});
+
+// 5. Global Unified 404 Handler
+app.notFound((c) => {
+  const reqId = c.get('requestId') || 'unknown';
+  const errorResp: ApiErrorResponse = {
+    success: false,
+    error: {
+      code: 'ROUTE_NOT_FOUND',
+      message: `The requested endpoint ${c.req.method} ${c.req.path} was not found on this Worker gateway.`,
+    },
+    request_id: reqId,
+  };
+  return c.json(errorResp, 404);
+});
+
+// ===================================================================
+// Standard V1 Endpoints
+// ===================================================================
+
+// Health Check Endpoint
 app.get('/api/v1/health', (c) => {
   return c.json({
-    status: 'ok',
-    service: 'aetherquant',
-    frontend: 'static-assets',
-    worker: 'online',
-    runtime: 'cloudflare-workers',
-    timestamp: new Date().toISOString(),
+    success: true,
+    data: {
+      status: 'ok',
+      service: 'aetherquant-worker',
+      gateway: 'Cloudflare Worker (Hono)',
+      timestamp: new Date().toISOString(),
+    },
+    request_id: c.get('requestId'),
   });
 });
 
-// Root API Health fallback
 app.get('/api/health', (c) => {
   return c.json({
-    status: 'ok',
-    service: 'aetherquant',
-    frontend: 'static-assets',
-    worker: 'online',
-    runtime: 'cloudflare-workers',
-    timestamp: new Date().toISOString(),
+    success: true,
+    data: {
+      status: 'ok',
+      service: 'aetherquant-worker',
+      gateway: 'Cloudflare Worker (Hono)',
+      timestamp: new Date().toISOString(),
+    },
+    request_id: c.get('requestId'),
   });
 });
 
-// 2. D1 Database Verification Endpoint
-// TODO: Secure before production Beta (e.g. restrict to Admin or remove)
-app.get('/api/v1/test/d1', async (c) => {
-  try {
-    const db = c.env.DB;
-    if (!db) {
-      return c.json(
-        {
-          status: 'error',
-          database: 'disconnected',
-          message: 'D1 binding (DB) is not configured',
-        },
-        500
-      );
+// System Status Endpoint (Detects D1, R2, DeepSeek & Quant Service health without leaking secrets)
+app.get('/api/v1/system/status', async (c) => {
+  const reqId = c.get('requestId');
+  const d1Configured = Boolean(c.env.DB);
+  const r2Configured = Boolean(c.env.DATA_BUCKET);
+  const deepseekConfigured = Boolean(c.env.DEEPSEEK_API_KEY);
+  const quantConfigured = Boolean(c.env.QUANT_SERVICE_URL);
+
+  let d1Status = d1Configured ? 'connected' : 'unconfigured';
+  if (d1Configured) {
+    try {
+      await c.env.DB.prepare('SELECT 1').first();
+    } catch {
+      d1Status = 'error';
     }
-
-    const row = await db
-      .prepare('SELECT value FROM system_settings WHERE key = ?')
-      .bind('system_name')
-      .first<{ value: string }>();
-
-    if (!row) {
-      return c.json(
-        {
-          status: 'ok',
-          database: 'connected',
-          value: null,
-          message: 'system_settings record not found, please apply migrations',
-        },
-        200
-      );
-    }
-
-    return c.json({
-      status: 'ok',
-      database: 'connected',
-      value: row.value,
-    });
-  } catch (err: any) {
-    return c.json(
-      {
-        status: 'error',
-        database: 'failed',
-        message: err?.message || 'Failed to query D1 database',
-      },
-      500
-    );
   }
+
+  const resData: ApiSuccessResponse = {
+    success: true,
+    data: {
+      gateway: 'healthy',
+      d1: d1Status,
+      r2: r2Configured ? 'connected' : 'unconfigured',
+      deepseek: deepseekConfigured ? 'configured' : 'unconfigured',
+      quant_service: quantConfigured ? 'configured' : 'unconfigured',
+      timestamp: new Date().toISOString(),
+    },
+    request_id: reqId,
+  };
+  return c.json(resData);
 });
 
-// 3. R2 Storage Verification Endpoint
-// Fixed test object: system/infrastructure-test.txt to avoid unbounded object creations
-// TODO: Secure before production Beta (e.g. restrict to Admin or remove)
-app.get('/api/v1/test/r2', async (c) => {
+// Real DeepSeek Chat (Strict Production Pipeline - Zero Silent Mock Fallback)
+app.post('/api/v1/ai/chat', async (c) => {
+  const reqId = c.get('requestId');
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const baseUrl = c.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com';
+  const model = c.env.DEEPSEEK_MODEL || 'deepseek-chat';
+
+  if (!apiKey) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'AI_NOT_CONFIGURED',
+        message: 'DeepSeek API key is not configured in server environment (DEEPSEEK_API_KEY missing).',
+      },
+      request_id: reqId,
+    };
+    return c.json(errResp, 400);
+  }
+
+  const body = await c.req.json<{
+    prompt?: string;
+    messages?: Array<{ role: string; content: string }>;
+    stream?: boolean;
+  }>().catch(() => ({ prompt: '', messages: [], stream: false }));
+
+  const messages = body.messages && body.messages.length > 0
+    ? body.messages
+    : [{ role: 'user', content: body.prompt || '' }];
+
+  const isStream = body.stream !== false;
+
   try {
-    const bucket = c.env.DATA_BUCKET;
-    if (!bucket) {
-      return c.json(
-        {
-          status: 'error',
-          bucket: 'disconnected',
-          message: 'R2 binding (DATA_BUCKET) is not configured',
+    const upstreamRes = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: isStream,
+        temperature: 0.3,
+      }),
+    });
+
+    if (!upstreamRes.ok) {
+      const errText = await upstreamRes.text().catch(() => '');
+      let errCode = 'AI_PROVIDER_ERROR';
+      if (upstreamRes.status === 401) errCode = 'AI_PROVIDER_AUTH_ERROR';
+      else if (upstreamRes.status === 402) errCode = 'AI_PROVIDER_BALANCE_ERROR';
+      else if (upstreamRes.status === 429) errCode = 'AI_PROVIDER_RATE_LIMIT';
+
+      const errResp: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: errCode,
+          message: `DeepSeek API returned HTTP ${upstreamRes.status}: ${errText || 'Upstream request failed'}`,
         },
-        500
-      );
+        request_id: reqId,
+      };
+      return c.json(errResp, upstreamRes.status as any);
     }
 
-    const testKey = 'system/infrastructure-test.txt';
-    const existing = await bucket.head(testKey);
-
-    if (!existing) {
-      await bucket.put(testKey, 'Hello from AetherQuant', {
-        httpMetadata: { contentType: 'text/plain' },
-        customMetadata: { createdBy: 'infrastructure-test' },
+    if (isStream && upstreamRes.body) {
+      // Forward ReadableStream directly to browser with SSE headers
+      return new Response(upstreamRes.body, {
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          'X-Request-Id': reqId,
+        },
       });
     }
 
-    const object = await bucket.get(testKey);
-    if (!object) {
-      return c.json(
-        {
-          status: 'error',
-          bucket: 'failed',
-          message: 'Unable to retrieve test object from R2',
-        },
-        500
-      );
-    }
-
+    const data: any = await upstreamRes.json();
     return c.json({
-      status: 'ok',
-      bucket: 'connected',
-      test_object: testKey,
+      success: true,
+      data: {
+        text: data.choices?.[0]?.message?.content || '',
+        usage: data.usage || null,
+        model,
+      },
+      request_id: reqId,
     });
   } catch (err: any) {
-    return c.json(
-      {
-        status: 'error',
-        bucket: 'failed',
-        message: err?.message || 'Failed to access R2 bucket',
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'AI_PROVIDER_NETWORK_ERROR',
+        message: `Failed to connect to DeepSeek API: ${err?.message || 'Network error'}`,
       },
-      500
-    );
+      request_id: reqId,
+    };
+    return c.json(errResp, 502);
   }
 });
 

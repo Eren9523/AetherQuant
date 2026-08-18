@@ -1,3 +1,8 @@
+/**
+ * [LEGACY DEV BACKEND - TRANSITIONING TO CLOUDFLARE WORKER]
+ * Note: Cloudflare Worker (worker/src/index.ts) is the official production gateway.
+ * This Express server is maintained for local Node development previews.
+ */
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -9,6 +14,10 @@ async function startServer() {
   const PORT = 3000;
 
   // Global Middlewares
+  app.use((req, res, next) => {
+    res.setHeader('X-Backend-Mode', 'legacy-dev-node');
+    next();
+  });
   app.use(cors());
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
