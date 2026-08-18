@@ -39,7 +39,6 @@ export interface ResearchMessage {
 }
 
 export interface CreateThreadInput {
-  id?: string;
   userId: string;
   title: string;
   marketContext?: string;
@@ -56,18 +55,20 @@ export interface UpdateThreadInput {
 }
 
 export interface CreateUserMessageInput {
-  id?: string;
   threadId: string;
   userId: string;
   clientMessageId?: string | null;
   content: string;
 }
 
+export interface CreateUserMessageResult {
+  message: ResearchMessage;
+  created: boolean;
+}
+
 export interface CreateAssistantPlaceholderInput {
-  id?: string;
   threadId: string;
   userId: string;
-  clientMessageId?: string | null;
   provider?: string | null;
   model?: string | null;
 }

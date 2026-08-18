@@ -11,7 +11,7 @@ export class ResearchThreadRepository {
    * Create a new research thread for a user
    */
   async create(input: CreateThreadInput): Promise<ResearchThread> {
-    const id = input.id || crypto.randomUUID();
+    const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
     const thread: ResearchThread = {

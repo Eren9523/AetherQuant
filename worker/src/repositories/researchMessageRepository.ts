@@ -1,6 +1,7 @@
 import {
   ResearchMessage,
   CreateUserMessageInput,
+  CreateUserMessageResult,
   CreateAssistantPlaceholderInput,
   CompleteAssistantMessageInput,
   FailAssistantMessageInput,
@@ -11,18 +12,19 @@ export class ResearchMessageRepository {
   constructor(private readonly db: D1Database) {}
 
   /**
-   * Find a message by client_message_id within a thread (for idempotency checks)
+   * Find a user message by client_message_id within a thread verifying ownership
    */
   async findByClientMessageId(
     threadId: string,
+    userId: string,
     clientMessageId: string
   ): Promise<ResearchMessage | null> {
     const row = await this.db
       .prepare(
         `SELECT * FROM research_messages 
-         WHERE thread_id = ? AND client_message_id = ?`
+         WHERE thread_id = ? AND user_id = ? AND client_message_id = ? AND role = 'user'`
       )
-      .bind(threadId, clientMessageId)
+      .bind(threadId, userId, clientMessageId)
       .first<ResearchMessage>();
 
     return row || null;
@@ -47,17 +49,37 @@ export class ResearchMessageRepository {
   }
 
   /**
-   * Create a user message with idempotency support
+   * Create a user message with write-side IDOR verification and true idempotency semantics
    */
-  async createUserMessage(input: CreateUserMessageInput): Promise<ResearchMessage> {
+  async createUserMessage(
+    input: CreateUserMessageInput
+  ): Promise<CreateUserMessageResult> {
+    // 1. Mandatory Write-Side Ownership Verification
+    const thread = await this.db
+      .prepare(
+        `SELECT id FROM research_threads 
+         WHERE id = ? AND user_id = ? AND deleted_at IS NULL`
+      )
+      .bind(input.threadId, input.userId)
+      .first();
+
+    if (!thread) {
+      throw new Error('THREAD_NOT_FOUND_OR_ACCESS_DENIED');
+    }
+
+    // 2. Idempotency check for client_message_id
     if (input.clientMessageId) {
-      const existing = await this.findByClientMessageId(input.threadId, input.clientMessageId);
+      const existing = await this.findByClientMessageId(
+        input.threadId,
+        input.userId,
+        input.clientMessageId
+      );
       if (existing) {
-        return existing;
+        return { message: existing, created: false };
       }
     }
 
-    const id = input.id || crypto.randomUUID();
+    const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
     const message: ResearchMessage = {
@@ -112,38 +134,48 @@ export class ResearchMessageRepository {
         )
         .run();
 
-      return message;
+      return { message, created: true };
     } catch (err: any) {
-      // If unique constraint failed on client_message_id during concurrent insert
       if (input.clientMessageId && String(err).includes('UNIQUE')) {
-        const existing = await this.findByClientMessageId(input.threadId, input.clientMessageId);
-        if (existing) return existing;
+        const existing = await this.findByClientMessageId(
+          input.threadId,
+          input.userId,
+          input.clientMessageId
+        );
+        if (existing) return { message: existing, created: false };
       }
       throw err;
     }
   }
 
   /**
-   * Create an initial streaming placeholder for assistant response
+   * Create an initial streaming placeholder for assistant response with write-side IDOR check
+   * (Assistant client_message_id is always NULL)
    */
   async createAssistantPlaceholder(
     input: CreateAssistantPlaceholderInput
   ): Promise<ResearchMessage> {
-    if (input.clientMessageId) {
-      const existing = await this.findByClientMessageId(input.threadId, input.clientMessageId);
-      if (existing) {
-        return existing;
-      }
+    // 1. Mandatory Write-Side Ownership Verification
+    const thread = await this.db
+      .prepare(
+        `SELECT id FROM research_threads 
+         WHERE id = ? AND user_id = ? AND deleted_at IS NULL`
+      )
+      .bind(input.threadId, input.userId)
+      .first();
+
+    if (!thread) {
+      throw new Error('THREAD_NOT_FOUND_OR_ACCESS_DENIED');
     }
 
-    const id = input.id || crypto.randomUUID();
+    const id = crypto.randomUUID();
     const now = new Date().toISOString();
 
     const message: ResearchMessage = {
       id,
       thread_id: input.threadId,
       user_id: input.userId,
-      client_message_id: input.clientMessageId || null,
+      client_message_id: null, // Always NULL for assistant messages
       role: 'assistant',
       content: '',
       status: 'streaming',
@@ -160,45 +192,37 @@ export class ResearchMessageRepository {
       completed_at: null,
     };
 
-    try {
-      await this.db
-        .prepare(
-          `INSERT INTO research_messages (
-            id, thread_id, user_id, client_message_id, role, content, status,
-            provider, model, input_tokens, output_tokens, latency_ms,
-            error_code, error_message, created_at, updated_at, started_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .bind(
-          message.id,
-          message.thread_id,
-          message.user_id,
-          message.client_message_id,
-          message.role,
-          message.content,
-          message.status,
-          message.provider,
-          message.model,
-          message.input_tokens,
-          message.output_tokens,
-          message.latency_ms,
-          message.error_code,
-          message.error_message,
-          message.created_at,
-          message.updated_at,
-          message.started_at,
-          message.completed_at
-        )
-        .run();
+    await this.db
+      .prepare(
+        `INSERT INTO research_messages (
+          id, thread_id, user_id, client_message_id, role, content, status,
+          provider, model, input_tokens, output_tokens, latency_ms,
+          error_code, error_message, created_at, updated_at, started_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        message.id,
+        message.thread_id,
+        message.user_id,
+        message.client_message_id,
+        message.role,
+        message.content,
+        message.status,
+        message.provider,
+        message.model,
+        message.input_tokens,
+        message.output_tokens,
+        message.latency_ms,
+        message.error_code,
+        message.error_message,
+        message.created_at,
+        message.updated_at,
+        message.started_at,
+        message.completed_at
+      )
+      .run();
 
-      return message;
-    } catch (err: any) {
-      if (input.clientMessageId && String(err).includes('UNIQUE')) {
-        const existing = await this.findByClientMessageId(input.threadId, input.clientMessageId);
-        if (existing) return existing;
-      }
-      throw err;
-    }
+    return message;
   }
 
   /**

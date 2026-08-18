@@ -398,18 +398,6 @@ app.post('/api/v1/ai/chat', async (c) => {
 // Research Persistence Endpoints (D1 Real Repository)
 // ==========================================
 
-// Helper to ensure user exists before foreign key insert in P1
-async function ensureUserExists(db: D1Database, userId: string): Promise<void> {
-  await db
-    .prepare(
-      `INSERT OR IGNORE INTO users (id, email, name, role, created_at, updated_at)
-       VALUES (?, ?, ?, 'free', datetime('now'), datetime('now'))`
-    )
-    .bind(userId, `${userId}@aetherquant.internal`, 'Researcher')
-    .run()
-    .catch(() => {});
-}
-
 // 1. List Research Threads
 app.get('/api/v1/research/threads', async (c) => {
   const reqId = c.get('requestId');
@@ -422,7 +410,16 @@ app.get('/api/v1/research/threads', async (c) => {
     return c.json(errResp, 503);
   }
 
-  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const userId = c.get('authenticatedUserId');
+  if (!userId) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'AUTH_REQUIRED', message: '需要登录认证后访问研究会话。' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 401);
+  }
+
   const query = c.req.query('q');
   const limit = parseInt(c.req.query('limit') || '30', 10);
 
@@ -436,7 +433,7 @@ app.get('/api/v1/research/threads', async (c) => {
   });
 });
 
-// 2. Create Research Thread
+// 2. Create Research Thread (Server UUID strictly enforced)
 app.post('/api/v1/research/threads', async (c) => {
   const reqId = c.get('requestId');
   if (!c.env.DB) {
@@ -448,16 +445,22 @@ app.post('/api/v1/research/threads', async (c) => {
     return c.json(errResp, 503);
   }
 
-  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
-  await ensureUserExists(c.env.DB, userId);
+  const userId = c.get('authenticatedUserId');
+  if (!userId) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'AUTH_REQUIRED', message: '需要登录认证后创建研究会话。' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 401);
+  }
 
   const body = await c.req
-    .json<{ id?: string; title?: string; activeSymbol?: string; marketContext?: string }>()
-    .catch((): { id?: string; title?: string; activeSymbol?: string; marketContext?: string } => ({}));
+    .json<{ title?: string; activeSymbol?: string; marketContext?: string }>()
+    .catch((): { title?: string; activeSymbol?: string; marketContext?: string } => ({}));
 
   const threadRepo = new ResearchThreadRepository(c.env.DB);
   const thread = await threadRepo.create({
-    id: body.id,
     userId,
     title: body.title || '新量化研究会话',
     activeSymbol: body.activeSymbol,
@@ -483,7 +486,16 @@ app.get('/api/v1/research/threads/:id', async (c) => {
     return c.json(errResp, 503);
   }
 
-  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const userId = c.get('authenticatedUserId');
+  if (!userId) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'AUTH_REQUIRED', message: '需要登录认证后访问研究会话。' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 401);
+  }
+
   const threadId = c.req.param('id');
 
   const threadRepo = new ResearchThreadRepository(c.env.DB);
@@ -520,7 +532,16 @@ app.patch('/api/v1/research/threads/:id', async (c) => {
     return c.json(errResp, 503);
   }
 
-  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const userId = c.get('authenticatedUserId');
+  if (!userId) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'AUTH_REQUIRED', message: '需要登录认证后修改研究会话。' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 401);
+  }
+
   const threadId = c.req.param('id');
   const body = await c.req
     .json<{ title?: string; pinned?: boolean; archived?: boolean; activeSymbol?: string }>()
@@ -557,7 +578,16 @@ app.delete('/api/v1/research/threads/:id', async (c) => {
     return c.json(errResp, 503);
   }
 
-  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
+  const userId = c.get('authenticatedUserId');
+  if (!userId) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'AUTH_REQUIRED', message: '需要登录认证后删除研究会话。' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 401);
+  }
+
   const threadId = c.req.param('id');
 
   const threadRepo = new ResearchThreadRepository(c.env.DB);
@@ -579,7 +609,7 @@ app.delete('/api/v1/research/threads/:id', async (c) => {
   });
 });
 
-// 6. Record/Append Message in Thread
+// 6. Record/Append User Message in Thread (Strictly user-role only)
 app.post('/api/v1/research/threads/:id/messages', async (c) => {
   const reqId = c.get('requestId');
   if (!c.env.DB) {
@@ -591,10 +621,42 @@ app.post('/api/v1/research/threads/:id/messages', async (c) => {
     return c.json(errResp, 503);
   }
 
-  const userId = c.get('authenticatedUserId') || c.req.header('x-user-id') || 'usr_default_researcher';
-  await ensureUserExists(c.env.DB, userId);
+  const userId = c.get('authenticatedUserId');
+  if (!userId) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: { code: 'AUTH_REQUIRED', message: '需要登录认证后发送消息。' },
+      request_id: reqId,
+    };
+    return c.json(errResp, 401);
+  }
 
   const threadId = c.req.param('id');
+
+  type PublicMessageBody = {
+    role?: string;
+    content?: string;
+    client_message_id?: string;
+    clientMessageId?: string;
+  };
+
+  const body = await c.req
+    .json<PublicMessageBody>()
+    .catch((): PublicMessageBody => ({ content: '' }));
+
+  // Prohibit client from spoofing assistant messages
+  if (body.role && body.role !== 'user') {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'INVALID_MESSAGE_ROLE',
+        message: '客户端只允许提交 user 角色消息，assistant 消息由服务端 AI 管道维护。',
+      },
+      request_id: reqId,
+    };
+    return c.json(errResp, 400);
+  }
+
   const threadRepo = new ResearchThreadRepository(c.env.DB);
   const thread = await threadRepo.findByIdForUser(threadId, userId);
 
@@ -607,63 +669,24 @@ app.post('/api/v1/research/threads/:id/messages', async (c) => {
     return c.json(errResp, 404);
   }
 
-  type MessageBody = {
-    role?: 'user' | 'assistant';
-    content?: string;
-    clientMessageId?: string;
-    provider?: string;
-    model?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    latencyMs?: number;
-    status?: 'streaming' | 'completed' | 'failed';
-  };
-
-  const body = await c.req
-    .json<MessageBody>()
-    .catch((): MessageBody => ({ role: 'user', content: '' }));
-
+  const clientMsgId = body.client_message_id || body.clientMessageId || null;
   const messageRepo = new ResearchMessageRepository(c.env.DB);
-  let message;
 
-  if (body.role !== 'assistant') {
-    message = await messageRepo.createUserMessage({
-      threadId,
-      userId,
-      clientMessageId: body.clientMessageId,
-      content: body.content || '',
-    });
-    await threadRepo.touchAfterMessage(threadId, userId, 1);
-  } else {
-    const placeholder = await messageRepo.createAssistantPlaceholder({
-      threadId,
-      userId,
-      clientMessageId: body.clientMessageId,
-      provider: body.provider,
-      model: body.model,
-    });
+  const result = await messageRepo.createUserMessage({
+    threadId,
+    userId,
+    clientMessageId: clientMsgId,
+    content: body.content || '',
+  });
 
-    if (body.status === 'completed' || body.content) {
-      message = await messageRepo.completeAssistantMessage({
-        messageId: placeholder.id,
-        threadId,
-        userId,
-        content: body.content || '',
-        provider: body.provider,
-        model: body.model,
-        inputTokens: body.inputTokens,
-        outputTokens: body.outputTokens,
-        latencyMs: body.latencyMs,
-      });
-    } else {
-      message = placeholder;
-    }
+  // Only update message_count and last_message_at if it was a newly created row
+  if (result.created) {
     await threadRepo.touchAfterMessage(threadId, userId, 1);
   }
 
   return c.json({
     success: true,
-    data: message,
+    data: result.message,
     request_id: reqId,
   });
 });

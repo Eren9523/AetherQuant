@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ResearchService } from '../../services/quantServices';
+import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
 import {
   Send,
   CheckCircle2,
@@ -194,29 +195,35 @@ export const AIResearchView: React.FC = () => {
   };
 
   const createNewThread = async () => {
-    const newId = `thread_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const welcomeMsg = getWelcomeMessage();
-
-    setCurrentThreadId(newId);
-    setMessages([welcomeMsg]);
-
-    const created = await ResearchService.createThread({
-      id: newId,
-      title: '新量化研究会话',
-      activeSymbol: selectedStockSymbol,
-    });
-
-    setThreadsList((prev) => [
-      {
-        id: newId,
+    try {
+      const created = await ResearchService.createThread({
         title: '新量化研究会话',
-        active_symbol: selectedStockSymbol,
-        last_message_at: new Date().toISOString(),
-        pinned: false,
-        message_count: 1,
-      },
-      ...prev,
-    ]);
+        activeSymbol: selectedStockSymbol,
+      });
+      const newId = created?.id || `demo_thread_${Date.now()}`;
+      setCurrentThreadId(newId);
+      setMessages([welcomeMsg]);
+
+      setThreadsList((prev) => [
+        {
+          id: newId,
+          title: created?.title || '新量化研究会话',
+          active_symbol: selectedStockSymbol,
+          last_message_at: new Date().toISOString(),
+          pinned: false,
+          message_count: 0,
+        },
+        ...prev,
+      ]);
+    } catch (e) {
+      console.error('Failed to create thread:', e);
+      if (RUNTIME_CONFIG.isDemoMode) {
+        const demoId = `demo_thread_${Date.now()}`;
+        setCurrentThreadId(demoId);
+        setMessages([welcomeMsg]);
+      }
+    }
   };
 
   const getWelcomeMessage = () => ({
@@ -241,9 +248,22 @@ export const AIResearchView: React.FC = () => {
 
     let activeId = currentThreadId;
     if (!activeId) {
-      activeId = `thread_${Date.now()}`;
-      setCurrentThreadId(activeId);
-      await ResearchService.createThread({ id: activeId, activeSymbol: selectedStockSymbol });
+      try {
+        const created = await ResearchService.createThread({
+          title: query.slice(0, 24) || '新量化研究会话',
+          activeSymbol: selectedStockSymbol,
+        });
+        activeId = created?.id || `demo_thread_${Date.now()}`;
+        setCurrentThreadId(activeId);
+      } catch (e) {
+        console.error('Failed to create initial thread for prompt:', e);
+        if (RUNTIME_CONFIG.isDemoMode) {
+          activeId = `demo_thread_${Date.now()}`;
+          setCurrentThreadId(activeId);
+        } else {
+          throw e;
+        }
+      }
     }
 
     const userMsgId = `usr_${Date.now()}`;
@@ -305,15 +325,8 @@ export const AIResearchView: React.FC = () => {
       );
       setMessages(finalMsgs);
 
-      // Persist to D1 + R2 database
-      const titleCandidate = newMessages.find((m) => m.sender === 'user')?.content.slice(0, 24) || '量化策略问答';
-      await ResearchService.saveHistorySession({
-        id: activeId,
-        title: titleCandidate,
-        messages: finalMsgs,
-      });
-
       // Update thread list
+      const titleCandidate = newMessages.find((m) => m.sender === 'user')?.content.slice(0, 24) || '量化策略问答';
       setThreadsList((prev) => {
         const found = prev.some((t) => t.id === activeId);
         if (found) {

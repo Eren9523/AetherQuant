@@ -406,11 +406,18 @@ export const ResearchService = {
     return await ApiClient.get<{ thread: any; messages: any[] }>(`/research/threads/${threadId}`);
   },
 
-  async createThread(params: { id?: string; title?: string; activeSymbol?: string }) {
+  async createThread(params?: { title?: string; activeSymbol?: string; marketContext?: string }) {
     if (RUNTIME_CONFIG.isDemoMode) {
-      return { id: params.id || `demo_${Date.now()}`, title: params.title || '新量化研究会话' };
+      return {
+        id: `demo_${Date.now()}`,
+        title: params?.title || '新量化研究会话',
+        active_symbol: params?.activeSymbol || null,
+        created_at: new Date().toISOString(),
+        last_message_at: new Date().toISOString(),
+        message_count: 0,
+      };
     }
-    return await ApiClient.post<any>('/research/threads', params);
+    return await ApiClient.post<any>('/research/threads', params || {});
   },
 
   async updateThread(threadId: string, updates: { title?: string; pinned?: boolean; archived?: boolean }) {
@@ -427,11 +434,9 @@ export const ResearchService = {
     return await ApiClient.delete<any>(`/research/threads/${threadId}`);
   },
 
-  async saveHistorySession(session: { id: string; title: string; messages: any[] }) {
-    if (RUNTIME_CONFIG.isDemoMode) {
-      return { success: true };
-    }
-    return await ApiClient.post<any>('/research/threads/save', session);
+  async saveHistorySession(_session: { id: string; title: string; messages: any[] }) {
+    // Deprecated bulk save: persistence in Real Mode is managed via dedicated repository endpoints
+    return { success: true };
   },
 
   async getFeaturedPrompts(params?: any) {
