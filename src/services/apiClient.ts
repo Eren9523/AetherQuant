@@ -4,9 +4,51 @@
  * - Unwraps success { success: true, data: T, request_id } -> returns T
  * - Normalizes failures { success: false, error: { code, message }, request_id } -> throws ApiError
  * - Streamlined SSE Event Contract: delta / done / error
+ * - Seamless support for System Cloudflare Encrypted Gateway vs Custom User API Key
  */
 
 const API_BASE = '/api/v1';
+
+export interface UserAiConfig {
+  channelMode: 'system' | 'custom';
+  apiKey?: string;
+  apiEndpoint?: string;
+  selectedModel?: string;
+  apiPreset?: 'deepseek' | 'openai' | 'ollama' | 'custom';
+  deepThinking?: boolean;
+  reasoningEffort?: string;
+  streaming?: boolean;
+  temperature?: number;
+}
+
+export function getUserAiConfig(): UserAiConfig {
+  try {
+    const saved = localStorage.getItem('aetherquant_user_ai_config');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch {}
+  return {
+    channelMode: 'system',
+    apiEndpoint: 'https://api.deepseek.com',
+    selectedModel: 'deepseek-chat',
+    apiPreset: 'deepseek',
+    deepThinking: true,
+    reasoningEffort: 'medium',
+    streaming: true,
+    temperature: 0.4,
+  };
+}
+
+export function saveUserAiConfig(config: Partial<UserAiConfig>) {
+  try {
+    const current = getUserAiConfig();
+    const updated = { ...current, ...config };
+    localStorage.setItem('aetherquant_user_ai_config', JSON.stringify(updated));
+    return updated;
+  } catch {}
+  return config;
+}
 
 export class ApiError extends Error {
   public code: string;
@@ -26,10 +68,20 @@ export class ApiError extends Error {
 
 export class ApiClient {
   private static parseErrorResponse(errJson: any, status: number, statusText: string): ApiError {
+    const defaultMsg =
+      statusText ||
+      (status === 403
+        ? '无权限访问或安全策略受限 (Forbidden)'
+        : status === 404
+        ? '请求资源不存在 (Not Found)'
+        : status === 500
+        ? '服务器内部处理异常 (Internal Server Error)'
+        : `请求失败 (HTTP ${status})`);
+
     if (errJson && typeof errJson === 'object') {
       if (errJson.error && typeof errJson.error === 'object') {
         const code = errJson.error.code || 'API_ERROR';
-        const message = errJson.error.message || statusText || 'API 请求异常';
+        const message = errJson.error.message || defaultMsg;
         return new ApiError(code, message, status, errJson.request_id, errJson.error.details);
       }
       if (typeof errJson.error === 'string') {
@@ -39,7 +91,21 @@ export class ApiClient {
         return new ApiError(errJson.code || 'API_ERROR', errJson.message, status, errJson.request_id);
       }
     }
-    return new ApiError('HTTP_ERROR', `HTTP ${status}: ${statusText}`, status);
+    return new ApiError('HTTP_ERROR', `HTTP ${status}: ${defaultMsg}`, status);
+  }
+
+  private static getAiHeaders(path: string): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (path.startsWith('/ai/')) {
+      const cfg = getUserAiConfig();
+      headers['x-api-channel-mode'] = cfg.channelMode;
+      if (cfg.channelMode === 'custom') {
+        if (cfg.apiKey) headers['x-custom-api-key'] = cfg.apiKey;
+        if (cfg.apiEndpoint) headers['x-custom-api-base'] = cfg.apiEndpoint;
+        if (cfg.selectedModel) headers['x-custom-model'] = cfg.selectedModel;
+      }
+    }
+    return headers;
   }
 
   public static async get<T>(path: string, params?: Record<string, string | number | boolean>): Promise<T> {
@@ -56,6 +122,7 @@ export class ApiClient {
     const response = await fetch(url, {
       headers: {
         'Accept': 'application/json',
+        ...this.getAiHeaders(path),
       },
       credentials: 'include',
     });
@@ -75,6 +142,7 @@ export class ApiClient {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        ...this.getAiHeaders(path),
       },
       credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
@@ -95,6 +163,7 @@ export class ApiClient {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        ...this.getAiHeaders(path),
       },
       credentials: 'include',
       body: body ? JSON.stringify(body) : undefined,
@@ -146,6 +215,7 @@ export class ApiClient {
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'text/event-stream, application/json',
+          ...this.getAiHeaders(path),
         },
         credentials: 'include',
         body: JSON.stringify({ ...body, stream: true }),
@@ -223,3 +293,4 @@ export class ApiClient {
     }
   }
 }
+

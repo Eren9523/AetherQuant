@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ResearchService } from '../../services/quantServices';
 import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
+import { getUserAiConfig } from '../../services/apiClient';
 import {
   Send,
   CheckCircle2,
@@ -47,6 +48,15 @@ interface PromptCard {
   source_symbols?: string[];
   is_stable_template?: boolean;
 }
+
+const defaultPromptsFallback: PromptCard[] = [
+  { id: 'f1', category: '行情诊股', title: '诊断 [600519.SH] 筹码与动量', summary: '评估 600519.SH 60日动量评分、估值分位数与筹码分布。', prompt: '详细诊断标的 [600519.SH] 的 60 日动量评分、估值分位数、筹码集中度与同业比较优势。', tags: ['600519.SH', '动量'] },
+  { id: 'f2', category: '因子选股', title: '沪深300高动量低波动精选', summary: '筛选近60日动量前20%、20日波动率低、换手率改善的优质标的。', prompt: '帮我从沪深300中寻找最近60日动量排名位于前20%，同时20日已实现波动率较低、换手率改善的股票。', tags: ['沪深300', '选股'] },
+  { id: 'f3', category: '财报拆解', title: 'NVIDIA (NVDA) 算力财报深度剖析', summary: '拆解 NVDA 最新财报，重点分析 Data Center 算力需求与 Blackwell 毛利率。', prompt: '拆解 NVIDIA 最新季度财报，重点分析 Data Center 算力需求与 Blackwell 架构芯片毛利率变化趋势。', tags: ['NVDA', '算力'] },
+  { id: 'f4', category: '策略构建', title: '质量成长多因子策略与回测', summary: '以 ROE + 自由现金流为核心，设计 A 股质量成长多因子调仓模型。', prompt: '请为我设计一个以 ROE + 自由现金流为核心的 A 股质量成长多因子策略，包含因子权重、调仓周期与止损建议。', tags: ['多因子', '策略'] },
+  { id: 'f5', category: '宏观轮动', title: '红利低波与科技成长股轮动', summary: '评估当前利率与流动性下，高股息红利与半导体科技的调仓性价比。', prompt: '结合当前宏观利率环境与市场流动性，深度评估高股息红利股与半导体科技股的轮动性价比与调仓时机。', tags: ['宏观', '轮动'] },
+  { id: 'f6', category: 'AI 预测', title: 'LightGBM 多因子超额收益预测', summary: '基于 14 个基本面与高频特征，预测下个周期全市场 TOP10 超额股票。', prompt: '使用 LightGBM 模型基于 14 个基本面与高频因子，预测下一个 20 日调仓周期的全市场超额收益 TOP10 股票。', tags: ['LightGBM', 'AI'] },
+];
 
 export const AIResearchView: React.FC = () => {
   const { workspaceView, selectedStockSymbol, navigateToStockDetail, addFactorToLibrary } = useApp();
@@ -102,7 +112,7 @@ export const AIResearchView: React.FC = () => {
 
   // Prompt Recommendation Cards State (Local Pool + Daily Pool)
   const [promptSeed, setPromptSeed] = useState<number>(101);
-  const [displayedPrompts, setDisplayedPrompts] = useState<PromptCard[]>([]);
+  const [displayedPrompts, setDisplayedPrompts] = useState<PromptCard[]>(defaultPromptsFallback);
 
   // Docs tab state
   const [selectedDocId, setSelectedDocId] = useState<string>('doc-1');
@@ -148,14 +158,19 @@ export const AIResearchView: React.FC = () => {
   };
 
   const loadPromptsFromService = async (seedValue: number) => {
-    const prompts = await ResearchService.getRecommendedPrompts({
-      limit: 6,
-      activeSymbol: selectedStockSymbol,
-      seed: seedValue,
-    });
-    if (prompts && prompts.length > 0) {
-      setDisplayedPrompts(prompts);
-    } else {
+    try {
+      const prompts = await ResearchService.getRecommendedPrompts({
+        limit: 6,
+        activeSymbol: selectedStockSymbol,
+        seed: seedValue,
+      });
+      if (prompts && prompts.length > 0) {
+        setDisplayedPrompts(prompts);
+      } else {
+        setDisplayedPrompts(defaultPromptsFallback);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch recommended prompts, using defaults:', err);
       setDisplayedPrompts(defaultPromptsFallback);
     }
   };
@@ -505,8 +520,11 @@ export const AIResearchView: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <span className="text-sm font-extrabold tracking-tight text-slate-900">Aether Research</span>
-            <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full border border-slate-200 font-semibold">
-              DeepSeek V4-Flash
+            <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full border border-slate-200 font-semibold flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full ${getUserAiConfig().channelMode === 'system' ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>
+              {getUserAiConfig().selectedModel === 'v4-pro' ? 'DeepSeek V4-Pro' : 'DeepSeek V4-Flash'}
+              <span className="text-slate-400">·</span>
+              <span>{getUserAiConfig().channelMode === 'system' ? 'Cloudflare 系统通道' : '自定义 Key'}</span>
             </span>
           </div>
         </div>
@@ -1108,13 +1126,4 @@ const quickChips = [
   { label: '🔍 深度诊断 600519.SH', query: '深度分析 [600519.SH] 当前 K 线形态、主力资金净流入与换手率。' },
   { label: '📊 茅台 vs 宁德 财报评估', query: '对比 贵州茅台 (600519) 与 宁德时代 (300750) 最新季报净利润增速与估值性价比。' },
   { label: '🧪 因子 RankIC 计算', query: '计算全市场动量 (MOM_60) 与波动率 (VOL_20) 因子在最近 24 个月的 RankIC 均值与 IC/IR 稳定度。' },
-];
-
-const defaultPromptsFallback: PromptCard[] = [
-  { id: 'f1', category: '行情诊股', title: '诊断 [600519.SH] 筹码与动量', summary: '评估 600519.SH 60日动量评分、估值分位数与筹码分布。', prompt: '详细诊断标的 [600519.SH] 的 60 日动量评分、估值分位数、筹码集中度与同业比较优势。', tags: ['600519.SH', '动量'] },
-  { id: 'f2', category: '因子选股', title: '沪深300高动量低波动精选', summary: '筛选近60日动量前20%、20日波动率低、换手率改善的优质标的。', prompt: '帮我从沪深300中寻找最近60日动量排名位于前20%，同时20日已实现波动率较低、换手率改善的股票。', tags: ['沪深300', '选股'] },
-  { id: 'f3', category: '财报拆解', title: 'NVIDIA (NVDA) 算力财报深度剖析', summary: '拆解 NVDA 最新财报，重点分析 Data Center 算力需求与 Blackwell 毛利率。', prompt: '拆解 NVIDIA 最新季度财报，重点分析 Data Center 算力需求与 Blackwell 架构芯片毛利率变化趋势。', tags: ['NVDA', '算力'] },
-  { id: 'f4', category: '策略构建', title: '质量成长多因子策略与回测', summary: '以 ROE + 自由现金流为核心，设计 A 股质量成长多因子调仓模型。', prompt: '请为我设计一个以 ROE + 自由现金流为核心的 A 股质量成长多因子策略，包含因子权重、调仓周期与止损建议。', tags: ['多因子', '策略'] },
-  { id: 'f5', category: '宏观轮动', title: '红利低波与科技成长股轮动', summary: '评估当前利率与流动性下，高股息红利与半导体科技的调仓性价比。', prompt: '结合当前宏观利率环境与市场流动性，深度评估高股息红利股与半导体科技股的轮动性价比与调仓时机。', tags: ['宏观', '轮动'] },
-  { id: 'f6', category: 'AI 预测', title: 'LightGBM 多因子超额收益预测', summary: '基于 14 个基本面与高频特征，预测下个周期全市场 TOP10 超额股票。', prompt: '使用 LightGBM 模型基于 14 个基本面与高频因子，预测下一个 20 日调仓周期的全市场超额收益 TOP10 股票。', tags: ['LightGBM', 'AI'] },
 ];

@@ -48,6 +48,7 @@ async function startWorkerDevServer() {
       DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY || platformProxy?.env?.DEEPSEEK_API_KEY || '',
       DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL || platformProxy?.env?.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
       DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL || platformProxy?.env?.DEEPSEEK_MODEL || 'deepseek-chat',
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
       QUANT_SERVICE_URL: process.env.QUANT_SERVICE_URL || '',
       QUANT_SERVICE_TOKEN: process.env.QUANT_SERVICE_TOKEN || '',
       APP_ORIGIN: process.env.APP_ORIGIN || '',
