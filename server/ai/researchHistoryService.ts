@@ -244,15 +244,33 @@ export class ResearchHistoryService {
 }
 
 /**
- * Generate a clean title from the user's prompt:
- * - Removes newlines and extra spaces
- * - Truncates to ~24 Chinese characters
+ * Generate a clean, concise, human-readable title from the user's prompt:
+ * - Removes noise, brackets, command phrases, and prefixes
+ * - Produces concise 4-14 character titles like ChatGPT/DeepSeek
  */
 function generateCleanTitle(userPrompt: string): string {
-  if (!userPrompt) return '新量化研究';
-  const clean = userPrompt
-    .replace(/[\r\n]+/g, ' ')
-    .replace(/[【】\[\]]/g, '')
-    .trim();
-  return clean.slice(0, 24) + (clean.length > 24 ? '...' : '');
+  if (!userPrompt || !userPrompt.trim()) return '新量化研究';
+  let text = userPrompt.trim();
+
+  // Strip symbol/file annotations
+  text = text.replace(/\[(?:标的|股票|代码|附件):?[^\]]+\]/gi, '');
+  text = text.replace(/【(?:标的|股票|代码|附件):?[^】]+】/gi, '');
+
+  // Strip query noise
+  text = text.replace(/^(?:请|请你|请帮我|帮我|麻烦|麻烦帮我|我想了解|我想知道|如何|怎样|能不能|详细|深度|系统|结合当前|围绕|基于|使用|针对)\s*/g, '');
+  text = text.replace(/^(?:诊断|分析|评估|拆解|设计|构建|预测|筛选|推荐|计算|总结|剖析|对比)\s*/g, '');
+  text = text.replace(/^(?:标的|股票|个股|组合|策略|模型|财报|数据|因子)\s*/g, '');
+
+  // Strip punctuation
+  text = text.replace(/[，。！？、：；“”"'`~!@#$%^&*()_+=<>{}\[\]|\\]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  if (!text || text.length < 2) {
+    text = userPrompt.replace(/[\r\n]+/g, ' ').replace(/[【】\[\]]/g, '').trim().slice(0, 14);
+  }
+
+  if (text.length > 14) {
+    text = text.slice(0, 14);
+  }
+
+  return text || '量化策略问答';
 }

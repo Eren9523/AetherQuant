@@ -280,8 +280,7 @@ apiRouter.post('/automation/jobs/:id/run', (req: Request, res: Response) => {
 // 12. V1 Research Persistent History APIs
 // ==========================================
 
-// List user's active research threads (pinned first, then last_message_at DESC)
-apiRouter.get('/v1/research/threads', (req: Request, res: Response) => {
+const handleGetThreads = (req: Request, res: Response) => {
   const { userId } = getUserContext(req);
   const search = req.query.q as string;
   const limit = req.query.limit ? Number(req.query.limit) : 20;
@@ -293,10 +292,9 @@ apiRouter.get('/v1/research/threads', (req: Request, res: Response) => {
   });
 
   res.json({ count: threads.length, threads });
-});
+};
 
-// Create a new research thread
-apiRouter.post('/v1/research/threads', (req: Request, res: Response) => {
+const handlePostThreads = (req: Request, res: Response) => {
   const { userId } = getUserContext(req);
   const { id, title, activeSymbol, marketContext } = req.body;
 
@@ -310,10 +308,9 @@ apiRouter.post('/v1/research/threads', (req: Request, res: Response) => {
   });
 
   res.json({ success: true, thread });
-});
+};
 
-// Get detail of a specific thread (including messages)
-apiRouter.get('/v1/research/threads/:id', (req: Request, res: Response) => {
+const handleGetThreadDetail = (req: Request, res: Response) => {
   const { userId } = getUserContext(req);
   const threadId = req.params.id;
 
@@ -324,10 +321,9 @@ apiRouter.get('/v1/research/threads/:id', (req: Request, res: Response) => {
   }
 
   res.json({ thread, messages });
-});
+};
 
-// Get messages for lazy loading
-apiRouter.get('/v1/research/threads/:id/messages', (req: Request, res: Response) => {
+const handleGetThreadMessages = (req: Request, res: Response) => {
   const { userId } = getUserContext(req);
   const threadId = req.params.id;
 
@@ -338,10 +334,9 @@ apiRouter.get('/v1/research/threads/:id/messages', (req: Request, res: Response)
   }
 
   res.json({ threadId, count: messages.length, messages });
-});
+};
 
-// Update thread (rename, toggle pin, toggle archive)
-apiRouter.patch('/v1/research/threads/:id', (req: Request, res: Response) => {
+const handlePatchThread = (req: Request, res: Response) => {
   const { userId } = getUserContext(req);
   const threadId = req.params.id;
   const { title, pinned, archived } = req.body;
@@ -354,32 +349,23 @@ apiRouter.patch('/v1/research/threads/:id', (req: Request, res: Response) => {
 
   const success = ResearchHistoryService.updateThread(threadId, updates);
   res.json({ success, threadId });
-});
+};
 
-// Soft delete thread
-apiRouter.delete('/v1/research/threads/:id', (req: Request, res: Response) => {
+const handleDeleteThread = (req: Request, res: Response) => {
   const { userId } = getUserContext(req);
   const threadId = req.params.id;
 
   const success = ResearchHistoryService.softDeleteThread(threadId, userId);
   res.json({ success, threadId });
-});
+};
 
-// Post a user message to a thread and receive SSE stream / saved assistant message
-apiRouter.post('/v1/research/threads/:id/messages', async (req: Request, res: Response) => {
+const handlePostThreadMessages = async (req: Request, res: Response) => {
   const { userId, role } = getUserContext(req);
   const threadId = req.params.id;
-  const { content, activeSymbol } = req.body;
+  const { content, activeSymbol, role: msgRole } = req.body;
 
-  if (!content) {
+  if (!content && msgRole !== 'assistant') {
     res.status(400).json({ error: 'Message content required' });
-    return;
-  }
-
-  // Check AI quota
-  const quotaCheck = await UsageQuotaService.checkAiQuota(userId, role);
-  if (!quotaCheck.allowed) {
-    res.status(429).json({ error: quotaCheck.reason });
     return;
   }
 
@@ -390,30 +376,39 @@ apiRouter.post('/v1/research/threads/:id/messages', async (req: Request, res: Re
     activeSymbol,
   });
 
-  // 2. Persist user message to D1
-  const userMsg = ResearchHistoryService.appendMessage({
+  // 2. Persist message to DB
+  const savedMsg = ResearchHistoryService.appendMessage({
     threadId,
     userId,
-    role: 'user',
-    content,
+    role: msgRole === 'assistant' ? 'assistant' : 'user',
+    content: content || '',
     status: 'completed',
   });
 
-  // Fetch thread messages for conversation context
-  const { messages: historyMessages } = ResearchHistoryService.getThreadDetail(threadId, userId);
+  res.json({ success: true, message: savedMsg });
+};
 
-  const formattedChatMsgs = historyMessages.map((m) => ({
-    role: m.role as 'user' | 'assistant' | 'system',
-    content: m.content,
-  }));
+// Route registrations (support with or without /v1 prefix on router)
+apiRouter.get('/v1/research/threads', handleGetThreads);
+apiRouter.get('/research/threads', handleGetThreads);
 
-  // 3. Trigger DeepSeek SSE stream and persist assistant response
-  await DeepSeekProxyService.handleChatStream({
-    messages: formattedChatMsgs,
-    userId,
-    res,
-  });
-});
+apiRouter.post('/v1/research/threads', handlePostThreads);
+apiRouter.post('/research/threads', handlePostThreads);
+
+apiRouter.get('/v1/research/threads/:id', handleGetThreadDetail);
+apiRouter.get('/research/threads/:id', handleGetThreadDetail);
+
+apiRouter.get('/v1/research/threads/:id/messages', handleGetThreadMessages);
+apiRouter.get('/research/threads/:id/messages', handleGetThreadMessages);
+
+apiRouter.patch('/v1/research/threads/:id', handlePatchThread);
+apiRouter.patch('/research/threads/:id', handlePatchThread);
+
+apiRouter.delete('/v1/research/threads/:id', handleDeleteThread);
+apiRouter.delete('/research/threads/:id', handleDeleteThread);
+
+apiRouter.post('/v1/research/threads/:id/messages', handlePostThreadMessages);
+apiRouter.post('/research/threads/:id/messages', handlePostThreadMessages);
 
 // ==========================================
 // 13. Dynamic Prompt Recommendation APIs

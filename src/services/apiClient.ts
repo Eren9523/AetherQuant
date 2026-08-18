@@ -96,7 +96,7 @@ export class ApiClient {
 
   private static getAiHeaders(path: string): Record<string, string> {
     const headers: Record<string, string> = {};
-    if (path.startsWith('/ai/')) {
+    if (path.startsWith('/ai/') || path.startsWith('/research/')) {
       const cfg = getUserAiConfig();
       headers['x-api-channel-mode'] = cfg.channelMode;
       if (cfg.channelMode === 'custom') {

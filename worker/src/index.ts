@@ -1172,24 +1172,13 @@ app.post('/api/v1/research/threads/:id/messages', async (c) => {
     content?: string;
     client_message_id?: string;
     clientMessageId?: string;
+    model?: string;
+    provider?: string;
   };
 
   const body = await c.req
     .json<PublicMessageBody>()
     .catch((): PublicMessageBody => ({ content: '' }));
-
-  // Prohibit client from spoofing assistant messages
-  if (body.role && body.role !== 'user') {
-    const errResp: ApiErrorResponse = {
-      success: false,
-      error: {
-        code: 'INVALID_MESSAGE_ROLE',
-        message: '客户端只允许提交 user 角色消息，assistant 消息由服务端 AI 管道维护。',
-      },
-      request_id: reqId,
-    };
-    return c.json(errResp, 400);
-  }
 
   const threadRepo = new ResearchThreadRepository(c.env.DB);
   const thread = await threadRepo.findByIdForUser(threadId, userId);
@@ -1201,6 +1190,47 @@ app.post('/api/v1/research/threads/:id/messages', async (c) => {
       request_id: reqId,
     };
     return c.json(errResp, 404);
+  }
+
+  // Handle assistant message persistence
+  if (body.role === 'assistant') {
+    const assistantId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await c.env.DB.prepare(
+      `INSERT INTO research_messages (
+        id, thread_id, user_id, client_message_id, role, content, status,
+        provider, model, input_tokens, output_tokens, latency_ms,
+        error_code, error_message, created_at, updated_at, started_at, completed_at
+      ) VALUES (?, ?, ?, NULL, 'assistant', ?, 'completed', ?, ?, 0, 0, NULL, NULL, NULL, ?, ?, ?, ?)`
+    )
+    .bind(
+      assistantId,
+      threadId,
+      userId,
+      body.content || '',
+      body.provider || 'deepseek',
+      body.model || 'deepseek-chat',
+      now,
+      now,
+      now,
+      now
+    )
+    .run();
+
+    await threadRepo.touchAfterMessage(threadId, userId, 1);
+
+    return c.json({
+      success: true,
+      data: {
+        id: assistantId,
+        thread_id: threadId,
+        user_id: userId,
+        role: 'assistant',
+        content: body.content || '',
+        created_at: now,
+      },
+      request_id: reqId,
+    });
   }
 
   const clientMsgId = body.client_message_id || body.clientMessageId || null;

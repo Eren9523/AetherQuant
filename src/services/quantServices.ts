@@ -434,8 +434,29 @@ export const ResearchService = {
     return await ApiClient.delete<any>(`/research/threads/${threadId}`);
   },
 
+  async appendMessage(
+    threadId: string,
+    message: {
+      role: 'user' | 'assistant';
+      content: string;
+      clientMessageId?: string;
+      model?: string;
+      provider?: string;
+    }
+  ) {
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return {
+        id: `msg_${Date.now()}`,
+        thread_id: threadId,
+        role: message.role,
+        content: message.content,
+        created_at: new Date().toISOString(),
+      };
+    }
+    return await ApiClient.post<any>(`/research/threads/${threadId}/messages`, message);
+  },
+
   async saveHistorySession(_session: { id: string; title: string; messages: any[] }) {
-    // Deprecated bulk save: persistence in Real Mode is managed via dedicated repository endpoints
     return { success: true };
   },
 

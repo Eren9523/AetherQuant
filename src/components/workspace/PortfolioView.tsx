@@ -44,8 +44,8 @@ export const PortfolioView: React.FC = () => {
                     <div className="font-bold text-neutral-900">{pos.name}</div>
                     <div className="text-[10px] text-neutral-400 font-mono">{pos.symbol}</div>
                   </td>
-                  <td className="py-3 px-3 font-mono text-neutral-800">{pos.quantity} 股</td>
-                  <td className="py-3 px-3 font-mono text-neutral-600">¥{pos.avgCost}</td>
+                  <td className="py-3 px-3 font-mono text-neutral-800">{pos.shares} 股</td>
+                  <td className="py-3 px-3 font-mono text-neutral-600">¥{pos.costPrice}</td>
                   <td className="py-3 px-3 font-mono font-bold text-neutral-900">¥{pos.currentPrice}</td>
                   <td className="py-3 px-3 font-mono font-bold text-neutral-900">¥{pos.marketValue.toLocaleString()}</td>
                   <td className="py-3 px-3 font-mono font-bold text-emerald-600">+¥{pos.unrealizedPnL.toLocaleString()}</td>

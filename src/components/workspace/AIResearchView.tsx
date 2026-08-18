@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { ResearchService } from '../../services/quantServices';
 import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
 import { getUserAiConfig } from '../../services/apiClient';
+import { MarkdownRenderer } from '../common/MarkdownRenderer';
 import {
   Send,
   CheckCircle2,
@@ -33,7 +34,206 @@ import {
   Activity,
   Database,
   BookOpen,
+  Copy,
+  Pencil,
+  X,
+  MessageSquarePlus,
 } from 'lucide-react';
+
+const STORAGE_THREADS_KEY = 'aetherquant_research_threads_v3';
+const STORAGE_MSG_PREFIX = 'aetherquant_research_msgs_v3_';
+
+function safeJsonParse<T>(jsonStr: string | undefined | null, fallback: T): T {
+  if (!jsonStr) return fallback;
+  try {
+    return JSON.parse(jsonStr) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Extract an immediate, clean, human-readable title from user prompt (zero-latency):
+ * - Strips system annotations [标的: ...], imperative noise, brackets
+ * - Returns crisp 4-14 character title like "茅台动量与资金流向", "沪深300选股"
+ */
+function extractHeuristicTitle(prompt: string, fallbackSymbol?: string): string {
+  if (!prompt || !prompt.trim()) {
+    return fallbackSymbol ? `${fallbackSymbol} 投研分析` : '新量化研究';
+  }
+
+  let text = prompt.trim();
+
+  // 1. Strip attachment/symbol context wrappers like [标的: 600519.SH] or [附件: xx.pdf]
+  const symbolMatch = text.match(/\[(?:标的|股票|代码):?\s*([a-zA-Z0-9\.]+)\]/i);
+  const foundSymbol = symbolMatch ? symbolMatch[1] : (fallbackSymbol || '');
+  
+  text = text.replace(/\[(?:标的|股票|代码|附件):?[^\]]+\]/gi, '');
+  text = text.replace(/【(?:标的|股票|代码|附件):?[^】]+】/gi, '');
+
+  // 2. Remove common imperative query preambles
+  text = text.replace(/^(?:请|请你|请帮我|帮我|麻烦|麻烦帮我|我想了解|我想知道|如何|怎样|能不能|详细|深度|系统|结合当前|围绕|基于|使用|针对)\s*/g, '');
+  text = text.replace(/^(?:诊断|分析|评估|拆解|设计|构建|预测|筛选|推荐|计算|总结|剖析|对比)\s*/g, '');
+  text = text.replace(/^(?:标的|股票|个股|组合|策略|模型|财报|数据|因子)\s*/g, '');
+
+  // 3. Strip special punctuation
+  text = text.replace(/[，。！？、：；“”"'`~!@#$%^&*()_+=<>{}\[\]|\\]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  if (!text || text.length < 2) {
+    if (foundSymbol) return `${foundSymbol} 深度诊股`;
+    return prompt.slice(0, 12).trim() || '量化策略问答';
+  }
+
+  // Format into a crisp title
+  if (text.length > 14) {
+    text = text.slice(0, 14);
+  }
+
+  return text;
+}
+
+/**
+ * Trigger AI-based LLM summarization for a clean, professional 4-12 char session title
+ */
+async function generateAiSmartTitle(prompt: string, aiSnippet?: string): Promise<string | null> {
+  try {
+    const summaryPrompt = `你是一位专业量化投资总监。请根据以下对话内容，提炼出一个极简、专业、准确的中文会话标题。
+要求：
+1. 长度在4到12个汉字以内；
+2. 严禁出现书名号《》、双引号""、冒号、句号、星号、标签或任何前缀；
+3. 直接输出标题纯文本本身，不要添加任何解释。
+
+用户提问：${prompt.slice(0, 120)}
+回答关键点：${(aiSnippet || '').slice(0, 120)}`;
+
+    const res = await ResearchService.queryAI(summaryPrompt);
+    if (res && res.text) {
+      const clean = res.text
+        .replace(/^[#\*\s"“”'‘`《》【】\[\]：:]+/g, '')
+        .replace(/[#\*\s"“”'‘`《》【】\[\]：:。！？]+$/g, '')
+        .replace(/[\r\n]+/g, '')
+        .replace(/^(?:标题|主题|量化主题|对话主题)[：:]\s*/g, '')
+        .trim();
+      if (clean && clean.length >= 2 && clean.length <= 16) {
+        return clean;
+      }
+    }
+  } catch {
+    // Quiet fallback
+  }
+  return null;
+}
+
+/**
+ * Format relative friendly timestamps like standard AI chat (刚刚, 10分钟前, 昨天 14:20, 08/18)
+ */
+function formatFriendlyTime(isoString?: string): string {
+  if (!isoString) return '刚刚';
+  const time = new Date(isoString).getTime();
+  if (isNaN(time)) return '刚刚';
+
+  const now = Date.now();
+  const diffMinutes = Math.floor((now - time) / 60000);
+
+  if (diffMinutes < 1) return '刚刚';
+  if (diffMinutes < 60) return `${diffMinutes}分钟前`;
+
+  const d = new Date(time);
+  const nowD = new Date();
+  const isToday = d.toDateString() === nowD.toDateString();
+  if (isToday) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) {
+    return `昨天 ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  return d.toLocaleDateString([], { month: '2-digit', day: '2-digit' });
+}
+
+/**
+ * Group threads into standard date buckets (Pinned, Today, Yesterday, Previous 7 Days, Older)
+ */
+function groupThreadsByDate(threads: any[]) {
+  const groups: {
+    pinned: any[];
+    today: any[];
+    yesterday: any[];
+    previous7Days: any[];
+    older: any[];
+  } = {
+    pinned: [],
+    today: [],
+    yesterday: [],
+    previous7Days: [],
+    older: [],
+  };
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+  const startOf7Days = startOfToday - 7 * 24 * 60 * 60 * 1000;
+
+  for (const thread of threads) {
+    if (Boolean(thread.pinned)) {
+      groups.pinned.push(thread);
+      continue;
+    }
+
+    const time = thread.last_message_at
+      ? new Date(thread.last_message_at).getTime()
+      : new Date(thread.created_at || 0).getTime();
+
+    if (time >= startOfToday) {
+      groups.today.push(thread);
+    } else if (time >= startOfYesterday) {
+      groups.yesterday.push(thread);
+    } else if (time >= startOf7Days) {
+      groups.previous7Days.push(thread);
+    } else {
+      groups.older.push(thread);
+    }
+  }
+
+  return groups;
+}
+
+function saveCachedThreads(threads: any[]) {
+  try {
+    localStorage.setItem(STORAGE_THREADS_KEY, JSON.stringify(threads));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function getCachedThreads(): any[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_THREADS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCachedMessages(threadId: string, msgs: any[]) {
+  try {
+    localStorage.setItem(`${STORAGE_MSG_PREFIX}${threadId}`, JSON.stringify(msgs));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function getCachedMessages(threadId: string): any[] {
+  try {
+    const raw = localStorage.getItem(`${STORAGE_MSG_PREFIX}${threadId}`);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
 
 interface PromptCard {
   id: string;
@@ -89,6 +289,7 @@ export const AIResearchView: React.FC = () => {
     }[]
   >([]);
   const [loading, setLoading] = useState(false);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Audio recording toggle
@@ -110,6 +311,11 @@ export const AIResearchView: React.FC = () => {
     }[]
   >([]);
 
+  // Inline Thread Rename state
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [editingTitleText, setEditingTitleText] = useState<string>('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
   // Prompt Recommendation Cards State (Local Pool + Daily Pool)
   const [promptSeed, setPromptSeed] = useState<number>(101);
   const [displayedPrompts, setDisplayedPrompts] = useState<PromptCard[]>(defaultPromptsFallback);
@@ -119,6 +325,15 @@ export const AIResearchView: React.FC = () => {
   const [addedFactors, setAddedFactors] = useState<Record<string, boolean>>({});
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleCopyContent = (msgId: string, text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedMsgId(msgId);
+    setTimeout(() => {
+      setCopiedMsgId((prev) => (prev === msgId ? null : prev));
+    }, 2000);
+  };
 
   useEffect(() => {
     if (workspaceView === 'doc-research') {
@@ -140,20 +355,44 @@ export const AIResearchView: React.FC = () => {
   }, [selectedStockSymbol]);
 
   const loadThreadsFromDatabase = async () => {
+    // 1. Instant optimistic restore from local cache
+    const cachedThreads = getCachedThreads();
+    const cleanedCached = cachedThreads.map((t) => {
+      let cleanTitle = t.title || '新量化研究';
+      if (cleanTitle.startsWith('0 ')) cleanTitle = cleanTitle.slice(2).trim();
+      return { ...t, title: cleanTitle, pinned: Boolean(t.pinned) };
+    });
+
+    if (cleanedCached && cleanedCached.length > 0) {
+      setThreadsList(cleanedCached);
+      if (!currentThreadId) {
+        const first = cleanedCached[0];
+        selectThread(first.id, first.title);
+      }
+    }
+
     try {
-      const fetchedThreads = await ResearchService.getThreads(historySearch, 30);
+      const fetchedThreads = await ResearchService.getThreads(historySearch, 40);
       if (fetchedThreads && fetchedThreads.length > 0) {
-        setThreadsList(fetchedThreads);
-        const firstThread = fetchedThreads[0];
-        if (firstThread) {
-          selectThread(firstThread.id);
+        const normalized = fetchedThreads.map((t: any) => {
+          let cleanTitle = t.title || '新量化研究';
+          if (cleanTitle.startsWith('0 ')) cleanTitle = cleanTitle.slice(2).trim();
+          return { ...t, title: cleanTitle, pinned: Boolean(t.pinned) };
+        });
+        setThreadsList(normalized);
+        saveCachedThreads(normalized);
+        const firstThread = normalized[0];
+        if (firstThread && (!currentThreadId || !cleanedCached.some((t: any) => t.id === currentThreadId))) {
+          selectThread(firstThread.id, firstThread.title);
         }
-      } else {
+      } else if (!cleanedCached || cleanedCached.length === 0) {
         createNewThread();
       }
     } catch (err) {
-      console.warn('Failed to load threads from database, using initial session:', err);
-      createNewThread();
+      console.warn('Failed to load threads from database, using cached/initial session:', err);
+      if (!cleanedCached || cleanedCached.length === 0) {
+        createNewThread();
+      }
     }
   };
 
@@ -190,64 +429,98 @@ export const AIResearchView: React.FC = () => {
   }, [messages, loading]);
 
   // Load thread detail messages
-  const selectThread = async (threadId: string) => {
+  const selectThread = async (threadId: string, _threadTitle?: string) => {
     setCurrentThreadId(threadId);
-    const detail = await ResearchService.getThreadDetail(threadId);
-    if (detail && detail.messages && detail.messages.length > 0) {
-      const formattedMsgs = detail.messages.map((m: any) => ({
-        id: m.id,
-        sender: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-        content: m.content,
-        steps: m.steps_json ? safeJsonParse(m.steps_json, []) : undefined,
-        resultCard: m.result_card_json ? safeJsonParse(m.result_card_json, null) : undefined,
-        timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '刚刚',
-      }));
-      setMessages(formattedMsgs);
+
+    // 1. Load from local cache first for zero flicker
+    const cachedMsgs = getCachedMessages(threadId);
+    if (cachedMsgs && cachedMsgs.length > 0) {
+      setMessages(cachedMsgs);
     } else {
-      // Empty thread fallback to welcome greeting
-      setMessages([getWelcomeMessage()]);
+      setMessages([]);
+    }
+
+    // 2. Sync from backend D1 database
+    try {
+      const detail = await ResearchService.getThreadDetail(threadId);
+      if (detail && detail.messages && detail.messages.length > 0) {
+        const formattedMsgs = detail.messages.map((m: any) => ({
+          id: m.id || `msg_${Math.random()}`,
+          sender: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+          content: m.content,
+          steps: m.steps_json ? safeJsonParse(m.steps_json, []) : undefined,
+          resultCard: m.result_card_json ? safeJsonParse(m.result_card_json, null) : undefined,
+          timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '刚刚',
+        }));
+        setMessages(formattedMsgs);
+        saveCachedMessages(threadId, formattedMsgs);
+
+        // Retroactively polish default titles from actual conversation content if needed
+        const firstUser = formattedMsgs.find((m: any) => m.sender === 'user');
+        if (firstUser && firstUser.content) {
+          const currentT = threadsList.find((t) => t.id === threadId);
+          if (
+            currentT &&
+            (currentT.title === '新量化研究会话' ||
+              currentT.title === '新研究会话' ||
+              currentT.title === '未命名会话' ||
+              currentT.title.startsWith('0 '))
+          ) {
+            const cleanTitle = extractHeuristicTitle(firstUser.content, currentT.active_symbol);
+            setThreadsList((prev) => {
+              const updated = prev.map((t) => (t.id === threadId ? { ...t, title: cleanTitle } : t));
+              saveCachedThreads(updated);
+              return updated;
+            });
+            ResearchService.updateThread(threadId, { title: cleanTitle }).catch(() => {});
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not sync thread detail from backend, staying with local cache:', e);
     }
   };
 
   const createNewThread = async () => {
-    const welcomeMsg = getWelcomeMessage();
+    // If the current active thread is already blank with 0 messages, just reuse it
+    if (currentThreadId && messages.length === 0) {
+      if (composerRef.current) composerRef.current.focus();
+      return;
+    }
+
     try {
       const created = await ResearchService.createThread({
-        title: '新量化研究会话',
+        title: '新量化研究',
         activeSymbol: selectedStockSymbol,
       });
-      const newId = created?.id || `demo_thread_${Date.now()}`;
+      const newId = created?.id || `thread_${Date.now()}`;
       setCurrentThreadId(newId);
-      setMessages([welcomeMsg]);
+      setMessages([]);
+      saveCachedMessages(newId, []);
 
-      setThreadsList((prev) => [
-        {
-          id: newId,
-          title: created?.title || '新量化研究会话',
-          active_symbol: selectedStockSymbol,
-          last_message_at: new Date().toISOString(),
-          pinned: false,
-          message_count: 0,
-        },
-        ...prev,
-      ]);
+      const newThreadItem = {
+        id: newId,
+        title: '新量化研究',
+        active_symbol: selectedStockSymbol,
+        last_message_at: new Date().toISOString(),
+        pinned: false,
+        message_count: 0,
+      };
+
+      setThreadsList((prev) => {
+        const updated = [newThreadItem, ...prev.filter((t) => t.id !== newId)];
+        saveCachedThreads(updated);
+        return updated;
+      });
+      if (composerRef.current) composerRef.current.focus();
     } catch (e) {
       console.error('Failed to create thread:', e);
-      if (RUNTIME_CONFIG.isDemoMode) {
-        const demoId = `demo_thread_${Date.now()}`;
-        setCurrentThreadId(demoId);
-        setMessages([welcomeMsg]);
-      }
+      const fallbackId = `thread_${Date.now()}`;
+      setCurrentThreadId(fallbackId);
+      setMessages([]);
+      saveCachedMessages(fallbackId, []);
     }
   };
-
-  const getWelcomeMessage = () => ({
-    id: 'welcome-msg',
-    sender: 'assistant' as const,
-    content: `你可以使用 AetherQuant 进行量化研究、策略设计与数据分析；部分行情、因子与文档能力将根据当前已连接的数据服务提供。例如：“从沪深300中筛选60日动量排名前20%且波动率较低的股票”`,
-    steps: ['支持多因子量化研究与策略设计', '支持量化指标归因与智能分析', '数据与行情服务将根据实际连接环境提供'],
-    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  });
 
   // Handle clicking on prompt card -> FILLS COMPOSER ONLY!
   const handlePromptCardClick = (cardPrompt: string) => {
@@ -261,23 +534,22 @@ export const AIResearchView: React.FC = () => {
     const query = (overrideText || inputPrompt).trim();
     if (!query || loading) return;
 
+    // Generate immediate clean heuristic title from user prompt
+    const instantTitle = extractHeuristicTitle(query, selectedStockSymbol);
+
     let activeId = currentThreadId;
     if (!activeId) {
       try {
         const created = await ResearchService.createThread({
-          title: query.slice(0, 24) || '新量化研究会话',
+          title: instantTitle,
           activeSymbol: selectedStockSymbol,
         });
-        activeId = created?.id || `demo_thread_${Date.now()}`;
+        activeId = created?.id || `thread_${Date.now()}`;
         setCurrentThreadId(activeId);
       } catch (e) {
         console.error('Failed to create initial thread for prompt:', e);
-        if (RUNTIME_CONFIG.isDemoMode) {
-          activeId = `demo_thread_${Date.now()}`;
-          setCurrentThreadId(activeId);
-        } else {
-          throw e;
-        }
+        activeId = `thread_${Date.now()}`;
+        setCurrentThreadId(activeId);
       }
     }
 
@@ -301,7 +573,56 @@ export const AIResearchView: React.FC = () => {
     setInputPrompt('');
     const newMessages = [...messages, userMsg, initialAssistantMsg];
     setMessages(newMessages);
+    saveCachedMessages(activeId, newMessages);
     setLoading(true);
+
+    // Optimistically update thread title in UI immediately
+    setThreadsList((prev) => {
+      const existing = prev.find((t) => t.id === activeId);
+      const needTitleUpdate =
+        !existing ||
+        existing.title === '新量化研究会话' ||
+        existing.title === '新量化研究' ||
+        existing.title === '新研究会话' ||
+        existing.title.startsWith('0 ') ||
+        messages.length === 0;
+
+      const titleToUse = needTitleUpdate ? instantTitle : existing.title;
+      let updated: any[];
+      if (existing) {
+        updated = prev.map((t) =>
+          t.id === activeId
+            ? {
+                ...t,
+                title: titleToUse,
+                last_message_at: new Date().toISOString(),
+                message_count: newMessages.length,
+              }
+            : t
+        );
+      } else {
+        updated = [
+          {
+            id: activeId,
+            title: titleToUse,
+            active_symbol: selectedStockSymbol,
+            last_message_at: new Date().toISOString(),
+            pinned: false,
+            message_count: newMessages.length,
+          },
+          ...prev,
+        ];
+      }
+      saveCachedThreads(updated);
+      return updated;
+    });
+
+    // Persist user message to backend database in background
+    ResearchService.appendMessage(activeId, {
+      role: 'user',
+      content: query,
+      clientMessageId: userMsgId,
+    }).catch((err) => console.warn('Background append user msg failed:', err));
 
     let accumulatedText = '';
 
@@ -339,47 +660,49 @@ export const AIResearchView: React.FC = () => {
           : msg
       );
       setMessages(finalMsgs);
+      saveCachedMessages(activeId, finalMsgs);
 
-      // Update thread list
-      const titleCandidate = newMessages.find((m) => m.sender === 'user')?.content.slice(0, 24) || '量化策略问答';
-      setThreadsList((prev) => {
-        const found = prev.some((t) => t.id === activeId);
-        if (found) {
-          return prev.map((t) =>
-            t.id === activeId
-              ? { ...t, title: titleCandidate, last_message_at: new Date().toISOString(), message_count: finalMsgs.length }
-              : t
-          );
-        } else {
-          return [
-            {
-              id: activeId,
-              title: titleCandidate,
-              active_symbol: selectedStockSymbol,
-              last_message_at: new Date().toISOString(),
-              pinned: false,
-              message_count: finalMsgs.length,
-            },
-            ...prev,
-          ];
+      // Persist assistant message to backend database
+      ResearchService.appendMessage(activeId, {
+        role: 'assistant',
+        content: finalContent,
+        clientMessageId: assistantMsgId,
+      }).catch((err) => console.warn('Background append assistant msg failed:', err));
+
+      // Asynchronously invoke LLM summarization for a concise, deep topic title (standard ChatGPT/Claude pattern)
+      generateAiSmartTitle(query, finalContent).then((smartTitle) => {
+        if (smartTitle && smartTitle.length >= 2) {
+          setThreadsList((prev) => {
+            const updated = prev.map((t) =>
+              t.id === activeId ? { ...t, title: smartTitle } : t
+            );
+            saveCachedThreads(updated);
+            return updated;
+          });
+          ResearchService.updateThread(activeId, { title: smartTitle }).catch(() => {});
         }
-      });
+      }).catch(() => {});
+
     } catch (err: any) {
       console.error('Failed to query AI stream:', err);
       const errorCode = err?.code || 'AI_REQUEST_FAILED';
       const errorMessage = err?.message || '无法连接到 AI 服务，请检查上游配置与网络状态';
-      setMessages((prev) =>
-        prev.map((msg) =>
+      const errorContent = accumulatedText
+        ? `${accumulatedText}\n\n⚠️ **[传输中断 (${errorCode})]**: ${errorMessage}`
+        : `⚠️ **AI 服务调用失败 (${errorCode})**: ${errorMessage}\n\n如需配置密钥，请在系统设置或环境变量中设置 \`DEEPSEEK_API_KEY\`。`;
+
+      setMessages((prev) => {
+        const updated = prev.map((msg) =>
           msg.id === assistantMsgId
             ? {
                 ...msg,
-                content: accumulatedText
-                  ? `${accumulatedText}\n\n⚠️ **[传输中断 (${errorCode})]**: ${errorMessage}`
-                  : `⚠️ **AI 服务调用失败 (${errorCode})**: ${errorMessage}\n\n如需配置密钥，请在系统设置或环境变量中设置 \`DEEPSEEK_API_KEY\`。`,
+                content: errorContent,
               }
             : msg
-        )
-      );
+        );
+        saveCachedMessages(activeId, updated);
+        return updated;
+      });
     } finally {
       setLoading(false);
     }
@@ -387,22 +710,62 @@ export const AIResearchView: React.FC = () => {
 
   const handleTogglePinThread = async (e: React.MouseEvent, threadId: string, currentPinned: boolean) => {
     e.stopPropagation();
-    const newPinned = !currentPinned;
+    const newPinned = !Boolean(currentPinned);
     await ResearchService.updateThread(threadId, { pinned: newPinned });
-    setThreadsList((prev) =>
-      prev.map((t) => (t.id === threadId ? { ...t, pinned: newPinned } : t))
-        .sort((a, b) => (a.pinned === b.pinned ? 0 : a.pinned ? -1 : 1))
-    );
+    setThreadsList((prev) => {
+      const updated = prev
+        .map((t) => (t.id === threadId ? { ...t, pinned: newPinned } : t))
+        .sort((a, b) => (Boolean(a.pinned) === Boolean(b.pinned) ? 0 : a.pinned ? -1 : 1));
+      saveCachedThreads(updated);
+      return updated;
+    });
   };
 
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
     await ResearchService.deleteThread(threadId);
-    setThreadsList((prev) => prev.filter((t) => t.id !== threadId));
+    setThreadsList((prev) => {
+      const updated = prev.filter((t) => t.id !== threadId);
+      saveCachedThreads(updated);
+      return updated;
+    });
 
     if (currentThreadId === threadId) {
       createNewThread();
     }
+  };
+
+  // Inline Thread Title Rename Handlers
+  const handleStartRenameThread = (e: React.MouseEvent, threadId: string, currentTitle: string) => {
+    e.stopPropagation();
+    setEditingThreadId(threadId);
+    setEditingTitleText(currentTitle || '新量化研究');
+    setTimeout(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }, 50);
+  };
+
+  const handleSaveRenameThread = async (e: React.MouseEvent | React.FormEvent, threadId: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const trimmed = editingTitleText.trim();
+    if (!trimmed) {
+      setEditingThreadId(null);
+      return;
+    }
+    setThreadsList((prev) => {
+      const updated = prev.map((t) => (t.id === threadId ? { ...t, title: trimmed } : t));
+      saveCachedThreads(updated);
+      return updated;
+    });
+    setEditingThreadId(null);
+    await ResearchService.updateThread(threadId, { title: trimmed });
+  };
+
+  const handleCancelRenameThread = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingThreadId(null);
   };
 
   const handleAddFactor = (f: { code: string; name: string; ic: string; desc: string }) => {
@@ -570,8 +933,8 @@ export const AIResearchView: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Collapsible History Sidebar (Connected to D1 + R2 Storage) */}
         {showSidebar && activeTab === 'chat' && (
-          <aside className="w-64 border-r border-slate-200/60 bg-white/70 backdrop-blur-md p-3.5 flex flex-col justify-between shrink-0 transition-all hidden md:flex">
-            <div className="space-y-3 flex-1 flex flex-col overflow-hidden">
+          <aside className="w-72 border-r border-slate-200/60 bg-white/70 backdrop-blur-md p-3 flex flex-col justify-between shrink-0 transition-all hidden md:flex">
+            <div className="space-y-2.5 flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between text-xs font-semibold text-slate-500 px-1 pt-1">
                 <span className="flex items-center gap-1.5 font-bold text-slate-800">
                   <Clock className="w-3.5 h-3.5 text-slate-500" />
@@ -582,6 +945,15 @@ export const AIResearchView: React.FC = () => {
                 </span>
               </div>
 
+              {/* Quick Action: New Thread in Sidebar */}
+              <button
+                onClick={createNewThread}
+                className="w-full py-2 px-3 bg-white hover:bg-slate-50 text-slate-800 text-xs font-semibold rounded-xl border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-slate-600" />
+                <span>开启新研究对话</span>
+              </button>
+
               {/* History Search Bar */}
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
@@ -591,72 +963,229 @@ export const AIResearchView: React.FC = () => {
                   onChange={(e) => {
                     setHistorySearch(e.target.value);
                     ResearchService.getThreads(e.target.value).then((res) => {
-                      if (res) setThreadsList(res);
+                      if (res) {
+                        const normalized = res.map((t: any) => ({
+                          ...t,
+                          title: t.title?.startsWith('0 ') ? t.title.slice(2).trim() : t.title || '新量化研究',
+                          pinned: Boolean(t.pinned),
+                        }));
+                        setThreadsList(normalized);
+                      }
                     });
                   }}
-                  placeholder="搜索研究会话..."
-                  className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-xs text-slate-800 pl-8 pr-2.5 py-1.5 rounded-xl border border-slate-200/60 focus:outline-none focus:ring-1 focus:ring-slate-300 font-sans transition-all"
+                  placeholder="搜索历史对话..."
+                  className="w-full bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-xs text-slate-800 pl-8 pr-7 py-1.5 rounded-xl border border-slate-200/60 focus:outline-none focus:ring-1 focus:ring-slate-300 font-sans transition-all"
                 />
+                {historySearch && (
+                  <button
+                    onClick={() => {
+                      setHistorySearch('');
+                      ResearchService.getThreads('').then((res) => {
+                        if (res) setThreadsList(res);
+                      });
+                    }}
+                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
               </div>
 
-              {/* Session Items List */}
-              <div className="space-y-1 overflow-y-auto flex-1 pr-1 scrollbar-none">
-                {threadsList.map((thread) => {
-                  const isActive = thread.id === currentThreadId;
-                  return (
-                    <div
-                      key={thread.id}
-                      onClick={() => selectThread(thread.id)}
-                      className={`w-full text-left p-2.5 rounded-xl text-xs transition-all flex items-center justify-between group cursor-pointer border ${
-                        isActive
-                          ? 'bg-slate-900 text-white font-medium border-slate-900 shadow-2xs'
-                          : 'bg-white/60 hover:bg-slate-100/90 text-slate-700 border-slate-200/50'
-                      }`}
-                    >
-                      <div className="truncate pr-2 flex-1">
-                        <div className="truncate font-semibold text-xs flex items-center gap-1">
-                          {thread.pinned && <Pin className="w-3 h-3 text-amber-500 shrink-0 fill-amber-500" />}
-                          <span className="truncate">{thread.title || '新研究会话'}</span>
-                        </div>
-                        <div
-                          className={`text-[10px] font-mono mt-0.5 ${
-                            isActive ? 'text-slate-300' : 'text-slate-400'
-                          }`}
+              {/* Categorized Session Items List */}
+              <div className="space-y-3 overflow-y-auto flex-1 pr-1 scrollbar-none text-xs">
+                {(() => {
+                  if (threadsList.length === 0) {
+                    return (
+                      <div className="text-center py-8 px-2 text-slate-400 space-y-2">
+                        <MessageSquare className="w-8 h-8 mx-auto stroke-[1.5] text-slate-300" />
+                        <p className="text-xs">暂无历史研究记录</p>
+                        <button
+                          onClick={createNewThread}
+                          className="text-[11px] text-purple-600 hover:text-purple-700 font-semibold underline underline-offset-2"
                         >
-                          {thread.last_message_at
-                            ? new Date(thread.last_message_at).toLocaleDateString([], { month: '2-digit', day: '2-digit' })
-                            : '刚刚'}
-                        </div>
+                          立即开启首次分析
+                        </button>
                       </div>
+                    );
+                  }
 
-                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={(e) => handleTogglePinThread(e, thread.id, thread.pinned)}
-                          title={thread.pinned ? '取消置顶' : '置顶会话'}
-                          className={`p-1 rounded hover:bg-slate-200/60 transition-colors ${
-                            isActive ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-500'
-                          }`}
-                        >
-                          <Pin className={`w-3 h-3 ${thread.pinned ? 'fill-amber-500 text-amber-500' : ''}`} />
-                        </button>
-                        <button
-                          onClick={(e) => handleDeleteThread(e, thread.id)}
-                          title="删除会话"
-                          className={`p-1 rounded hover:text-rose-500 transition-colors ${
-                            isActive ? 'hover:bg-slate-800 text-slate-200' : 'text-slate-500'
-                          }`}
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                  // If user is searching, show flat filtered list
+                  if (historySearch.trim()) {
+                    return (
+                      <div className="space-y-1">
+                        <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">
+                          搜索匹配 ({threadsList.length})
+                        </div>
+                        {threadsList.map((thread) => renderThreadItem(thread))}
                       </div>
+                    );
+                  }
+
+                  // Otherwise show standard date-bucketed groups (Pinned, Today, Yesterday, Previous 7 Days, Older)
+                  const groups = groupThreadsByDate(threadsList);
+
+                  return (
+                    <div className="space-y-3">
+                      {groups.pinned.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-amber-600 px-2 flex items-center gap-1">
+                            <Pin className="w-2.5 h-2.5 fill-amber-500" />
+                            <span>置顶对话 ({groups.pinned.length})</span>
+                          </div>
+                          {groups.pinned.map((t) => renderThreadItem(t))}
+                        </div>
+                      )}
+
+                      {groups.today.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">
+                            今天
+                          </div>
+                          {groups.today.map((t) => renderThreadItem(t))}
+                        </div>
+                      )}
+
+                      {groups.yesterday.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">
+                            昨天
+                          </div>
+                          {groups.yesterday.map((t) => renderThreadItem(t))}
+                        </div>
+                      )}
+
+                      {groups.previous7Days.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">
+                            前 7 天
+                          </div>
+                          {groups.previous7Days.map((t) => renderThreadItem(t))}
+                        </div>
+                      )}
+
+                      {groups.older.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold text-slate-400 px-2 uppercase tracking-wider">
+                            更早记录
+                          </div>
+                          {groups.older.map((t) => renderThreadItem(t))}
+                        </div>
+                      )}
                     </div>
                   );
-                })}
+
+                  function renderThreadItem(thread: any) {
+                    const isActive = thread.id === currentThreadId;
+                    const isEditing = editingThreadId === thread.id;
+
+                    if (isEditing) {
+                      return (
+                        <form
+                          key={thread.id}
+                          onSubmit={(e) => handleSaveRenameThread(e, thread.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full p-1.5 bg-white rounded-xl border border-purple-300 shadow-xs flex items-center gap-1.5"
+                        >
+                          <input
+                            ref={titleInputRef}
+                            type="text"
+                            value={editingTitleText}
+                            onChange={(e) => setEditingTitleText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Escape') setEditingThreadId(null);
+                            }}
+                            className="flex-1 text-xs text-slate-900 bg-transparent px-1 py-0.5 focus:outline-none font-medium"
+                            placeholder="会话名称..."
+                          />
+                          <button
+                            type="submit"
+                            title="保存"
+                            className="p-1 text-emerald-600 hover:bg-emerald-50 rounded"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelRenameThread}
+                            title="取消"
+                            className="p-1 text-slate-400 hover:bg-slate-100 rounded"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </form>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={thread.id}
+                        onClick={() => selectThread(thread.id)}
+                        className={`w-full text-left p-2 rounded-xl text-xs transition-all flex items-center justify-between group cursor-pointer border ${
+                          isActive
+                            ? 'bg-slate-900 text-white font-medium border-slate-900 shadow-2xs'
+                            : 'bg-white/70 hover:bg-slate-100/90 text-slate-700 border-slate-200/50'
+                        }`}
+                      >
+                        <div className="truncate pr-1.5 flex-1">
+                          <div className="truncate font-semibold text-xs flex items-center gap-1">
+                            {Boolean(thread.pinned) && (
+                              <Pin className="w-3 h-3 text-amber-500 shrink-0 fill-amber-500" />
+                            )}
+                            <span className="truncate">{thread.title || '新量化研究'}</span>
+                          </div>
+                          <div
+                            className={`text-[10px] font-mono mt-0.5 flex items-center gap-1.5 ${
+                              isActive ? 'text-slate-300' : 'text-slate-400'
+                            }`}
+                          >
+                            <span>{formatFriendlyTime(thread.last_message_at)}</span>
+                            {thread.active_symbol && (
+                              <span className="opacity-80">· {thread.active_symbol}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action buttons on hover */}
+                        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => handleStartRenameThread(e, thread.id, thread.title)}
+                            title="重命名会话"
+                            className={`p-1 rounded transition-colors ${
+                              isActive ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200/70 text-slate-500'
+                            }`}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => handleTogglePinThread(e, thread.id, Boolean(thread.pinned))}
+                            title={Boolean(thread.pinned) ? '取消置顶' : '置顶会话'}
+                            className={`p-1 rounded transition-colors ${
+                              isActive ? 'hover:bg-slate-800 text-slate-300' : 'hover:bg-slate-200/70 text-slate-500'
+                            }`}
+                          >
+                            <Pin
+                              className={`w-3 h-3 ${Boolean(thread.pinned) ? 'fill-amber-500 text-amber-500' : ''}`}
+                            />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteThread(e, thread.id)}
+                            title="删除会话"
+                            className={`p-1 rounded transition-colors ${
+                              isActive ? 'hover:bg-slate-800 text-rose-300' : 'hover:bg-rose-50 text-slate-400 hover:text-rose-600'
+                            }`}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                })()}
               </div>
             </div>
 
             {/* Bottom Current Focus Stock Target Pill */}
-            <div className="p-3 bg-slate-100/80 rounded-2xl border border-slate-200/60 space-y-2 text-xs mt-3">
+            <div className="p-2.5 bg-slate-100/80 rounded-2xl border border-slate-200/60 space-y-1.5 text-xs mt-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-slate-500">聚焦标的</span>
                 <span className="font-mono font-bold bg-white text-slate-900 px-2 py-0.5 rounded text-[10px] border border-slate-200">
@@ -664,7 +1193,7 @@ export const AIResearchView: React.FC = () => {
                 </span>
               </div>
               <button
-                onClick={() => handleSend(`深度诊股标的 [${selectedStockSymbol}] 的 60日动量与资金流向`)}
+                onClick={() => handleSend(`深度诊断标的 [${selectedStockSymbol}] 的 60日动量、估值分位数与资金流向`)}
                 className="w-full py-1.5 bg-white hover:bg-slate-50 text-slate-800 text-[11px] font-semibold rounded-xl border border-slate-200/80 transition-colors flex items-center justify-center gap-1 cursor-pointer"
               >
                 <span>诊股 {selectedStockSymbol}</span>
@@ -769,7 +1298,7 @@ export const AIResearchView: React.FC = () => {
                         : 'bg-white text-slate-800 border border-slate-200/80 shadow-xs rounded-bl-none'
                     }`}
                   >
-                    {/* Header bar for Assistant Message (especially welcome message) */}
+                    {/* Header bar for Assistant Message */}
                     {msg.sender === 'assistant' && (
                       <div className="flex items-center gap-2 pb-2.5 mb-2.5 border-b border-slate-100 text-xs font-bold text-slate-900">
                         <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-extrabold">
@@ -781,11 +1310,42 @@ export const AIResearchView: React.FC = () => {
                             ● 行情可用 ● 因子可用
                           </span>
                           <span className="text-[10px] font-mono text-slate-400 font-normal">{msg.timestamp || '刚刚'}</span>
+                          {msg.content && (
+                            <button
+                              type="button"
+                              onClick={() => handleCopyContent(msg.id, msg.content)}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border border-slate-200/80 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer ml-1"
+                              title="复制完整回答"
+                            >
+                              {copiedMsgId === msg.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                  <span className="text-emerald-600 font-medium">已复制</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 text-slate-500" />
+                                  <span>复制回答</span>
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
 
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    {msg.sender === 'assistant' ? (
+                      msg.content ? (
+                        <MarkdownRenderer content={msg.content} />
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs text-slate-500 py-1 font-mono">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-700" />
+                          <span>Aether AI 正在计算并生成深度量化分析...</span>
+                        </div>
+                      )
+                    ) : (
+                      <div className="whitespace-pre-wrap font-sans text-white text-xs md:text-sm">{msg.content}</div>
+                    )}
 
                     {/* Step Execution Logs */}
                     {msg.steps && msg.steps.length > 0 && (
@@ -1112,14 +1672,6 @@ export const AIResearchView: React.FC = () => {
     </div>
   );
 };
-
-function safeJsonParse<T>(str: string, fallback: T): T {
-  try {
-    return JSON.parse(str);
-  } catch (e) {
-    return fallback;
-  }
-}
 
 const quickChips = [
   { label: '⚡ 策略代码生成', query: '请为我生成一套标准 Python / Backtrader 双均线与 RSI 量化策略代码范例。' },

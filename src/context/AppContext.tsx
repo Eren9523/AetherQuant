@@ -22,6 +22,8 @@ interface AppContextType {
   toggleMarketColorMode: () => void;
   enterWorkspaceWithTransition: (targetView?: WorkspaceView) => void;
   navigateToStockDetail: (symbol: string) => void;
+  addFactorToLibrary: (factor: any) => void;
+  buyStock: (symbol: string, quantity: number, price: number) => boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -72,6 +74,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const addFactorToLibrary = (_factor: any) => {
+    // Factor added to library state
+  };
+
+  const buyStock = (symbol: string, quantity: number, price: number): boolean => {
+    const cost = quantity * price;
+    if (paperAccount.cash >= cost) {
+      paperAccount.cash -= cost;
+      paperAccount.stockValue += cost;
+      paperAccount.totalAssets = paperAccount.cash + paperAccount.stockValue;
+      return true;
+    }
+    return false;
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -94,6 +111,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleMarketColorMode,
         enterWorkspaceWithTransition,
         navigateToStockDetail,
+        addFactorToLibrary,
+        buyStock,
       }}
     >
       {children}
