@@ -1,7 +1,6 @@
 /// <reference types="@cloudflare/workers-types" />
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
-import { ApiErrorResponse, ApiSuccessResponse } from './types/api';
+import type { ApiErrorResponse, ApiSuccessResponse } from './types/api';
 
 export type Bindings = {
   DB: D1Database;
@@ -22,6 +21,16 @@ export type Variables = {
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
+// Explicitly Allowed Origins (No wildcards in production)
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://ais-dev-tfgmht6jfsxhtes4mvcnxo-725789842825.us-east1.run.app',
+  'https://ais-pre-tfgmht6jfsxhtes4mvcnxo-725789842825.us-east1.run.app',
+]);
+
 // 1. Global Request ID Middleware
 app.use('*', async (c, next) => {
   const reqId = c.req.header('x-request-id') || `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -30,32 +39,52 @@ app.use('*', async (c, next) => {
   await next();
 });
 
-// 2. Global CORS Middleware
-app.use('*', cors({
-  origin: (origin) => {
-    // Allow local development and same-origin / cloudflare deployed origins
-    if (!origin || origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('.run.app') || origin.includes('.workers.dev') || origin.includes('.pages.dev')) {
-      return origin || '*';
+// 2. Strict CORS Middleware
+app.use('*', async (c, next) => {
+  const origin = c.req.header('origin');
+  
+  if (origin) {
+    if (ALLOWED_ORIGINS.has(origin)) {
+      c.header('Access-Control-Allow-Origin', origin);
+      c.header('Access-Control-Allow-Credentials', 'true');
+      c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Request-Id, Sec-Fetch-Site');
     }
-    return origin;
-  },
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Id', 'Sec-Fetch-Site'],
-  credentials: true,
-}));
+  }
+
+  if (c.req.method.toUpperCase() === 'OPTIONS') {
+    return new Response(null, { status: 204 });
+  }
+
+  await next();
+});
 
 // 3. Strict CSRF Middleware for state-mutating requests (POST, PUT, PATCH, DELETE)
 app.use('*', async (c, next) => {
   const method = c.req.method.toUpperCase();
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     const secFetchSite = c.req.header('sec-fetch-site');
-    // Block direct untrusted cross-site state mutations if Sec-Fetch-Site is cross-site
+    // Layer 1: Block explicit cross-site fetch
     if (secFetchSite === 'cross-site') {
       const errorResp: ApiErrorResponse = {
         success: false,
         error: {
           code: 'CSRF_BLOCKED',
           message: 'Cross-site request blocked by CSRF policy',
+        },
+        request_id: c.get('requestId'),
+      };
+      return c.json(errorResp, 403);
+    }
+
+    // Layer 2: Validate Origin against strict whitelist if Origin header is present
+    const origin = c.req.header('origin');
+    if (origin && !ALLOWED_ORIGINS.has(origin)) {
+      const errorResp: ApiErrorResponse = {
+        success: false,
+        error: {
+          code: 'CSRF_ORIGIN_DENIED',
+          message: 'Request origin not allowed by security policy',
         },
         request_id: c.get('requestId'),
       };
@@ -125,7 +154,7 @@ app.get('/api/health', (c) => {
   });
 });
 
-// System Status Endpoint (Detects D1, R2, DeepSeek & Quant Service health without leaking secrets)
+// System Status Endpoint (Strict truthfulness - no pseudo-healthy labels)
 app.get('/api/v1/system/status', async (c) => {
   const reqId = c.get('requestId');
   const d1Configured = Boolean(c.env.DB);
@@ -133,10 +162,11 @@ app.get('/api/v1/system/status', async (c) => {
   const deepseekConfigured = Boolean(c.env.DEEPSEEK_API_KEY);
   const quantConfigured = Boolean(c.env.QUANT_SERVICE_URL);
 
-  let d1Status = d1Configured ? 'connected' : 'unconfigured';
+  let d1Status: 'healthy' | 'error' | 'unconfigured' = 'unconfigured';
   if (d1Configured) {
     try {
       await c.env.DB.prepare('SELECT 1').first();
+      d1Status = 'healthy';
     } catch {
       d1Status = 'error';
     }
@@ -147,9 +177,9 @@ app.get('/api/v1/system/status', async (c) => {
     data: {
       gateway: 'healthy',
       d1: d1Status,
-      r2: r2Configured ? 'connected' : 'unconfigured',
+      r2: r2Configured ? 'configured' : 'unconfigured',
       deepseek: deepseekConfigured ? 'configured' : 'unconfigured',
-      quant_service: quantConfigured ? 'configured' : 'unconfigured',
+      quant: quantConfigured ? 'configured' : 'unconfigured',
       timestamp: new Date().toISOString(),
     },
     request_id: reqId,
@@ -157,7 +187,7 @@ app.get('/api/v1/system/status', async (c) => {
   return c.json(resData);
 });
 
-// Real DeepSeek Chat (Strict Production Pipeline - Zero Silent Mock Fallback)
+// Real DeepSeek Chat with Standard AetherQuant SSE Transformation
 app.post('/api/v1/ai/chat', async (c) => {
   const reqId = c.get('requestId');
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -169,7 +199,7 @@ app.post('/api/v1/ai/chat', async (c) => {
       success: false,
       error: {
         code: 'AI_NOT_CONFIGURED',
-        message: 'DeepSeek API key is not configured in server environment (DEEPSEEK_API_KEY missing).',
+        message: '未检测到 DEEPSEEK_API_KEY 配置，请在系统设置或环境变量中配置有效密钥。',
       },
       request_id: reqId,
     };
@@ -204,26 +234,104 @@ app.post('/api/v1/ai/chat', async (c) => {
     });
 
     if (!upstreamRes.ok) {
-      const errText = await upstreamRes.text().catch(() => '');
+      const errRaw = await upstreamRes.text().catch(() => '');
+      console.error(`[DeepSeek Upstream Error][${reqId}] status=${upstreamRes.status} raw=${errRaw}`);
+
       let errCode = 'AI_PROVIDER_ERROR';
-      if (upstreamRes.status === 401) errCode = 'AI_PROVIDER_AUTH_ERROR';
-      else if (upstreamRes.status === 402) errCode = 'AI_PROVIDER_BALANCE_ERROR';
-      else if (upstreamRes.status === 429) errCode = 'AI_PROVIDER_RATE_LIMIT';
+      let safeMessage = 'DeepSeek 上游服务响应异常';
+
+      if (upstreamRes.status === 401) {
+        errCode = 'AI_PROVIDER_AUTH_ERROR';
+        safeMessage = 'DeepSeek API Key 无效或未授权，请检查密钥配置';
+      } else if (upstreamRes.status === 402) {
+        errCode = 'AI_PROVIDER_BALANCE_ERROR';
+        safeMessage = 'DeepSeek 账户余额不足，请充值后重试';
+      } else if (upstreamRes.status === 429) {
+        errCode = 'AI_PROVIDER_RATE_LIMIT';
+        safeMessage = 'DeepSeek 调用频率超限，请稍后重试';
+      }
 
       const errResp: ApiErrorResponse = {
         success: false,
         error: {
           code: errCode,
-          message: `DeepSeek API returned HTTP ${upstreamRes.status}: ${errText || 'Upstream request failed'}`,
+          message: safeMessage,
         },
         request_id: reqId,
       };
       return c.json(errResp, upstreamRes.status as any);
     }
 
+    // Stream Mode: Transform Provider SSE into AetherQuant Event Contract
     if (isStream && upstreamRes.body) {
-      // Forward ReadableStream directly to browser with SSE headers
-      return new Response(upstreamRes.body, {
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      const encoder = new TextEncoder();
+
+      // Background stream transformer
+      (async () => {
+        const reader = upstreamRes.body!.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let hasEmittedChunk = false;
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+              const dataStr = trimmed.slice(6).trim();
+              if (dataStr === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(dataStr);
+                const deltaContent = parsed.choices?.[0]?.delta?.content;
+                if (deltaContent) {
+                  hasEmittedChunk = true;
+                  const payload = JSON.stringify({ type: 'delta', text: deltaContent });
+                  await writer.write(encoder.encode(`data: ${payload}\n\n`));
+                }
+              } catch {
+                // Ignore malformed partial chunks from upstream
+              }
+            }
+          }
+
+          // Emit AetherQuant Done Event
+          const donePayload = JSON.stringify({
+            type: 'done',
+            meta: {
+              provider: 'deepseek',
+              model,
+              request_id: reqId,
+              has_content: hasEmittedChunk,
+            },
+          });
+          await writer.write(encoder.encode(`data: ${donePayload}\n\n`));
+        } catch (streamErr: any) {
+          console.error(`[Stream Transform Error][${reqId}]`, streamErr);
+          const errorPayload = JSON.stringify({
+            type: 'error',
+            error: {
+              code: 'AI_STREAM_INTERRUPTED',
+              message: 'DeepSeek 数据流传输异常中断',
+            },
+          });
+          await writer.write(encoder.encode(`data: ${errorPayload}\n\n`));
+        } finally {
+          await writer.close().catch(() => {});
+        }
+      })();
+
+      return new Response(readable, {
         headers: {
           'Content-Type': 'text/event-stream; charset=utf-8',
           'Cache-Control': 'no-cache, no-transform',
@@ -233,22 +341,26 @@ app.post('/api/v1/ai/chat', async (c) => {
       });
     }
 
+    // Non-Stream Mode
     const data: any = await upstreamRes.json();
+    const textContent = data.choices?.[0]?.message?.content || '';
+
     return c.json({
       success: true,
       data: {
-        text: data.choices?.[0]?.message?.content || '',
+        text: textContent,
         usage: data.usage || null,
         model,
       },
       request_id: reqId,
     });
   } catch (err: any) {
+    console.error(`[DeepSeek Connection Error][${reqId}]`, err);
     const errResp: ApiErrorResponse = {
       success: false,
       error: {
         code: 'AI_PROVIDER_NETWORK_ERROR',
-        message: `Failed to connect to DeepSeek API: ${err?.message || 'Network error'}`,
+        message: '无法连接到 DeepSeek 远程服务，请检查服务器网络与出站连接。',
       },
       request_id: reqId,
     };

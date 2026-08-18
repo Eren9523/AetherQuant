@@ -286,12 +286,17 @@ export const AIResearchView: React.FC = () => {
         }
       );
 
+      const isClean = accumulatedText.trim().length > 0;
+      const finalContent = isClean
+        ? accumulatedText
+        : '⚠️ **[空响应异常 (AI_EMPTY_RESPONSE)]**: 模型未返回任何有效分析文本，请检查提示词或重试。';
+
       // Finalize messages list
       const finalMsgs = newMessages.map((msg) =>
         msg.id === assistantMsgId
           ? {
               ...msg,
-              content: accumulatedText || '已完成分析。',
+              content: finalContent,
             }
           : msg
       );
@@ -330,6 +335,7 @@ export const AIResearchView: React.FC = () => {
       });
     } catch (err: any) {
       console.error('Failed to query AI stream:', err);
+      const errorCode = err?.code || 'AI_REQUEST_FAILED';
       const errorMessage = err?.message || '无法连接到 AI 服务，请检查上游配置与网络状态';
       setMessages((prev) =>
         prev.map((msg) =>
@@ -337,8 +343,8 @@ export const AIResearchView: React.FC = () => {
             ? {
                 ...msg,
                 content: accumulatedText
-                  ? `${accumulatedText}\n\n⚠️ **[传输中断]**: ${errorMessage}`
-                  : `⚠️ **AI 服务调用失败**: ${errorMessage}\n\n请在环境变量中检查 \`DEEPSEEK_API_KEY\` 配置，或稍后重试。`,
+                  ? `${accumulatedText}\n\n⚠️ **[传输中断 (${errorCode})]**: ${errorMessage}`
+                  : `⚠️ **AI 服务调用失败 (${errorCode})**: ${errorMessage}\n\n如需配置密钥，请在系统设置或环境变量中设置 \`DEEPSEEK_API_KEY\`。`,
               }
             : msg
         )
