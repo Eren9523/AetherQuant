@@ -146,6 +146,37 @@ export interface AIResearchThread {
   }[];
 }
 
+export interface UserProfile {
+  id: string;
+  username?: string;
+  name: string;
+  avatar: string;
+  title: string;
+  department: string;
+  email: string;
+  phone?: string;
+  role: 'admin' | 'quant_lead' | 'researcher' | 'trader';
+  status: 'active' | 'offline' | 'busy';
+  accountType: 'Institutional Pro' | 'Fund Lead' | 'VIP Trader';
+  bio?: string;
+  lastLogin: string;
+  joinDate: string;
+  apiKeyCount: number;
+  liveTradingEnabled: boolean;
+}
+
+export interface QuantUserPreferences {
+  defaultUniverse: string[];
+  defaultBenchmark: string;
+  riskTolerance: 'conservative' | 'moderate' | 'aggressive';
+  defaultSlippageBp: number;
+  maxDrawdownAlertPct: number;
+  marketColorMode: 'CN' | 'US';
+  preferredStrategies: string[];
+  autoAiSummary: boolean;
+  pushNotifications: boolean;
+}
+
 export type WorkspaceView =
   | 'overview'
   | 'market'
@@ -167,4 +198,6 @@ export type WorkspaceView =
   | 'trading'
   | 'risk'
   | 'automation'
-  | 'settings';
+  | 'settings'
+  | 'user-center'
+  | 'admin-console';

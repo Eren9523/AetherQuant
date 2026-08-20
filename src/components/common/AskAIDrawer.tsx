@@ -11,6 +11,7 @@ export const AskAIDrawer: React.FC = () => {
     selectedStockSymbol,
     navigateToStockDetail,
     workspaceView,
+    requireAuth,
   } = useApp();
 
   const [inputPrompt, setInputPrompt] = useState('');
@@ -43,6 +44,11 @@ export const AskAIDrawer: React.FC = () => {
   const handleSend = async (queryText?: string) => {
     const textToSend = queryText || inputPrompt;
     if (!textToSend.trim() || loading) return;
+
+    // Check interaction authentication
+    if (!requireAuth(() => handleSend(queryText))) {
+      return;
+    }
 
     setInputPrompt('');
     setMessages((prev) => [...prev, { sender: 'user', content: textToSend }]);

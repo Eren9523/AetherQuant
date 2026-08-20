@@ -5,7 +5,7 @@ import { DataService } from '../../services/quantServices';
 import { Database, UploadCloud, FileText, CheckCircle2, RefreshCw, HardDrive, AlertCircle } from 'lucide-react';
 
 export const DataCenterView: React.FC = () => {
-  const { workspaceView, setWorkspaceView } = useApp();
+  const { workspaceView, setWorkspaceView, requireAuth } = useApp();
   const [activeSubTab, setActiveSubTab] = useState<'sources' | 'upload' | 'browser'>(
     workspaceView === 'upload-center' ? 'upload' : workspaceView === 'data-browser' ? 'browser' : 'sources'
   );
@@ -33,6 +33,9 @@ export const DataCenterView: React.FC = () => {
   ]);
 
   const handleFileUpload = async (fileName: string) => {
+    if (!requireAuth(() => handleFileUpload(fileName))) {
+      return;
+    }
     setIsParsing(true);
     const parsed = await DataService.parseUploadedFile(fileName);
     setDatasetInfo(parsed);

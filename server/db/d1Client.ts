@@ -4,7 +4,7 @@ import path from 'path';
 /**
  * Cloudflare D1 Client with dual mode:
  * 1. Cloudflare D1 REST API (when CLOUDFLARE_ACCOUNT_ID, D1_DATABASE_ID & CLOUDFLARE_API_TOKEN exist)
- * 2. High-performance Persistent Local Storage Engine for Local/Container dev
+ * 2. High-performance Persistent Local Storage & Query Engine for Local/Container dev
  */
 export interface D1QueryResult<T = any> {
   results: T[];
@@ -56,7 +56,7 @@ class D1DatabaseClient {
 
     // Initialize core tables if empty
     const coreTables = [
-      'users', 'sessions', 'instruments', 'market_snapshot_metadata',
+      'users', 'user_credentials', 'admin_credentials', 'sessions', 'instruments', 'market_snapshot_metadata',
       'watchlists', 'watchlist_items', 'datasets', 'dataset_columns',
       'documents', 'document_chunks', 'factor_definitions', 'factor_experiments',
       'strategies', 'strategy_versions', 'backtests', 'backtest_artifacts',
@@ -118,27 +118,32 @@ class D1DatabaseClient {
     const trimmed = sql.trim();
     const upper = trimmed.toUpperCase();
 
-    // Table operations
+    // 1. CREATE TABLE
+    if (upper.startsWith('CREATE TABLE')) {
+      const match = trimmed.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_]+)/i);
+      if (match && match[1]) {
+        const tableName = match[1];
+        if (!this.localTables[tableName]) {
+          this.localTables[tableName] = [];
+          this.saveLocalStorage();
+        }
+      }
+      return { results: [], success: true };
+    }
+
+    // 2. SELECT QUERIES
     if (upper.startsWith('SELECT')) {
       const match = trimmed.match(/FROM\s+([a-zA-Z0-9_]+)/i);
       const tableName = match ? match[1] : '';
-      let rows = this.localTables[tableName] || [];
+      let rows = [...(this.localTables[tableName] || [])];
 
-      // Simple condition matching if WHERE clause is present
+      // Parse WHERE conditions
       if (upper.includes('WHERE')) {
-        const wherePart = trimmed.split(/WHERE/i)[1];
-        if (wherePart) {
-          // If checking specific field e.g. user_id = ? or id = ?
-          const fieldMatch = wherePart.match(/([a-zA-Z0-9_]+)\s*=\s*\?/i);
-          if (fieldMatch && params.length > 0) {
-            const field = fieldMatch[1];
-            const val = params[0];
-            rows = rows.filter((r) => r[field] === val);
-          }
-        }
+        const whereClause = trimmed.substring(trimmed.search(/WHERE/i) + 5).split(/ORDER\s+BY|GROUP\s+BY|LIMIT/i)[0].trim();
+        rows = rows.filter((record) => this.evalWhere(whereClause, record, params));
       }
 
-      // Handle limit
+      // Handle LIMIT
       const limitMatch = trimmed.match(/LIMIT\s+(\d+)/i);
       if (limitMatch) {
         const lim = parseInt(limitMatch[1], 10);
@@ -148,35 +153,156 @@ class D1DatabaseClient {
       return { results: rows as T[], success: true };
     }
 
-    if (upper.startsWith('INSERT INTO')) {
-      const match = trimmed.match(/INSERT\s+INTO\s+([a-zA-Z0-9_]+)/i);
-      const tableName = match ? match[1] : '';
+    // 3. INSERT OR REPLACE / INSERT INTO
+    if (upper.startsWith('INSERT INTO') || upper.startsWith('INSERT OR REPLACE INTO') || upper.startsWith('REPLACE INTO')) {
+      const match = trimmed.match(/(?:INSERT\s+(?:OR\s+REPLACE\s+)?INTO|REPLACE\s+INTO)\s+([a-zA-Z0-9_]+)(?:\s*\(([^)]+)\))?/i);
+      if (!match) return { results: [], success: false };
+
+      const tableName = match[1];
+      const columnNames = match[2]
+        ? match[2].split(',').map((c) => c.trim().replace(/[`"']/g, ''))
+        : [];
+
       if (!this.localTables[tableName]) {
         this.localTables[tableName] = [];
       }
 
-      // If params is an object or array
-      const newRecord = typeof params[0] === 'object' ? { ...params[0] } : { id: `rec_${Date.now()}_${Math.random().toString(36).substr(2, 6)}` };
-      this.localTables[tableName].push(newRecord);
+      let newRecord: Record<string, any> = {};
+
+      if (params.length === 1 && typeof params[0] === 'object' && !Array.isArray(params[0])) {
+        newRecord = { ...params[0] };
+      } else if (columnNames.length > 0 && params.length >= columnNames.length) {
+        columnNames.forEach((col, idx) => {
+          newRecord[col] = params[idx];
+        });
+      } else if (params.length > 0) {
+        params.forEach((val, idx) => {
+          newRecord[`col_${idx}`] = val;
+        });
+      } else {
+        newRecord = { id: `rec_${Date.now()}_${Math.random().toString(36).substr(2, 6)}` };
+      }
+
+      if (!newRecord.id) {
+        newRecord.id = `rec_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+      }
+
+      // If replace / exists by primary key or unique fields
+      const existingIdx = this.localTables[tableName].findIndex(
+        (r) => (newRecord.id && r.id === newRecord.id) || (newRecord.username && r.username && r.username.toLowerCase() === newRecord.username.toLowerCase()) || (newRecord.email && r.email && r.email.toLowerCase() === newRecord.email.toLowerCase())
+      );
+
+      if (existingIdx !== -1 && (upper.includes('REPLACE') || upper.includes('INSERT OR REPLACE'))) {
+        this.localTables[tableName][existingIdx] = { ...this.localTables[tableName][existingIdx], ...newRecord };
+      } else if (existingIdx !== -1) {
+        this.localTables[tableName][existingIdx] = { ...this.localTables[tableName][existingIdx], ...newRecord };
+      } else {
+        this.localTables[tableName].push(newRecord);
+      }
+
       this.saveLocalStorage();
       return { results: [newRecord as any], success: true, meta: { changes: 1 } };
     }
 
+    // 4. UPDATE
     if (upper.startsWith('UPDATE')) {
       const match = trimmed.match(/UPDATE\s+([a-zA-Z0-9_]+)/i);
       const tableName = match ? match[1] : '';
+      const list = this.localTables[tableName] || [];
+
+      if (upper.includes('WHERE')) {
+        const whereClause = trimmed.substring(trimmed.search(/WHERE/i) + 5).trim();
+        let changed = 0;
+        list.forEach((item) => {
+          if (this.evalWhere(whereClause, item, params)) {
+            item.updated_at = new Date().toISOString();
+            changed++;
+          }
+        });
+        this.saveLocalStorage();
+        return { results: [], success: true, meta: { changes: changed } };
+      }
+
       this.saveLocalStorage();
       return { results: [], success: true, meta: { changes: 1 } };
     }
 
+    // 5. DELETE
     if (upper.startsWith('DELETE FROM')) {
       const match = trimmed.match(/DELETE\s+FROM\s+([a-zA-Z0-9_]+)/i);
       const tableName = match ? match[1] : '';
+      let list = this.localTables[tableName] || [];
+
+      if (upper.includes('WHERE')) {
+        const whereClause = trimmed.substring(trimmed.search(/WHERE/i) + 5).trim();
+        const initialLen = list.length;
+        list = list.filter((item) => !this.evalWhere(whereClause, item, params));
+        this.localTables[tableName] = list;
+        this.saveLocalStorage();
+        return { results: [], success: true, meta: { changes: initialLen - list.length } };
+      }
+
+      this.localTables[tableName] = [];
       this.saveLocalStorage();
-      return { results: [], success: true, meta: { changes: 1 } };
+      return { results: [], success: true, meta: { changes: list.length } };
     }
 
     return { results: [], success: true };
+  }
+
+  private evalWhere(whereClause: string, record: Record<string, any>, params: any[]): boolean {
+    if (!whereClause || !record) return true;
+
+    // Handle OR expressions e.g. "id = ? OR email = ?" or "LOWER(username) = ? OR LOWER(email) = ?"
+    if (/\s+OR\s+/i.test(whereClause)) {
+      const parts = whereClause.split(/\s+OR\s+/i);
+      return parts.some((p) => this.evalSingleCondition(p.trim(), record, params));
+    }
+
+    // Handle AND expressions e.g. "user_id = ? AND role = ?"
+    if (/\s+AND\s+/i.test(whereClause)) {
+      const parts = whereClause.split(/\s+AND\s+/i);
+      return parts.every((p) => this.evalSingleCondition(p.trim(), record, params));
+    }
+
+    return this.evalSingleCondition(whereClause.trim(), record, params);
+  }
+
+  private evalSingleCondition(cond: string, record: Record<string, any>, params: any[]): boolean {
+    // 1. Check for functions like LOWER(col) = ? or LOWER(col) = 'val'
+    const lowerFuncMatch = cond.match(/LOWER\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*=\s*(?:\?|'([^']*)')/i);
+    if (lowerFuncMatch) {
+      const field = lowerFuncMatch[1];
+      const targetVal = lowerFuncMatch[2] !== undefined ? lowerFuncMatch[2].toLowerCase() : (params[0] !== undefined ? String(params[0]).toLowerCase() : '');
+      const recordVal = record[field] !== undefined ? String(record[field]).toLowerCase() : '';
+      return recordVal === targetVal;
+    }
+
+    // 2. Check for field = ? or field = 'value'
+    const eqMatch = cond.match(/([a-zA-Z0-9_]+)\s*=\s*(?:\?|'([^']*)'|(\d+))/i);
+    if (eqMatch) {
+      const field = eqMatch[1];
+      let targetVal: any = undefined;
+      if (eqMatch[2] !== undefined) {
+        targetVal = eqMatch[2];
+      } else if (eqMatch[3] !== undefined) {
+        targetVal = Number(eqMatch[3]);
+      } else if (params.length > 0) {
+        targetVal = params[0];
+      }
+      return String(record[field]) === String(targetVal);
+    }
+
+    // 3. Fallback check
+    for (const key of Object.keys(record)) {
+      if (cond.includes(key) && params.length > 0) {
+        if (String(record[key]).toLowerCase() === String(params[0]).toLowerCase()) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   // Direct collection helpers for clean programmatic access
@@ -219,3 +345,4 @@ class D1DatabaseClient {
 }
 
 export const d1Client = new D1DatabaseClient();
+

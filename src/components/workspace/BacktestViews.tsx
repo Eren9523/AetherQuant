@@ -14,7 +14,7 @@ import {
 } from 'recharts';
 
 export const BacktestViews: React.FC = () => {
-  const { workspaceView, setWorkspaceView, selectedBacktestId, setSelectedBacktestId } = useApp();
+  const { workspaceView, setWorkspaceView, selectedBacktestId, setSelectedBacktestId, requireAuth } = useApp();
   const [activeSubTab, setActiveSubTab] = useState<'center' | 'compare'>(
     workspaceView === 'strategy-compare' ? 'compare' : 'center'
   );
@@ -36,6 +36,10 @@ export const BacktestViews: React.FC = () => {
   const [commission, setCommission] = useState('0.0003 (0.03%)');
 
   const handleStartBacktest = async () => {
+    if (!requireAuth(() => handleStartBacktest())) {
+      return;
+    }
+
     setIsSimulating(true);
     setProgressPercent(0);
     setProgressStep('初始化回测引擎...');

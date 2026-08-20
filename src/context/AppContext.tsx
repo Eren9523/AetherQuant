@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { MarketColorMode, WorkspaceView, PaperAccount } from '../types';
+import { MarketColorMode, WorkspaceView, PaperAccount, UserProfile } from '../types';
 import { mockPaperAccount } from '../mocks/mockPortfolio';
+import { UserService } from '../services/userService';
+import { formatErrorMessage } from '../utils/formatters';
 
 interface AppContextType {
   currentRoute: 'landing' | 'workspace';
@@ -9,21 +11,34 @@ interface AppContextType {
   marketColorMode: MarketColorMode;
   isCmdKOpen: boolean;
   isAskAIOpen: boolean;
+  isAuthModalOpen: boolean;
+  authModalMode: 'login' | 'register';
   selectedBacktestId: string;
   paperAccount: PaperAccount;
   isTransitioningToWorkspace: boolean;
+  userCenterSubTab: 'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security';
+  currentUser: UserProfile;
+  isAuthenticated: boolean;
   setCurrentRoute: (route: 'landing' | 'workspace') => void;
   setWorkspaceView: (view: WorkspaceView) => void;
   setSelectedStockSymbol: (symbol: string) => void;
   setMarketColorMode: (mode: MarketColorMode) => void;
   setIsCmdKOpen: (open: boolean) => void;
   setIsAskAIOpen: (open: boolean) => void;
+  setIsAuthModalOpen: (open: boolean) => void;
+  openAuthModal: (mode?: 'login' | 'register') => void;
+  requireAuth: (callback?: () => void) => boolean;
   setSelectedBacktestId: (id: string) => void;
+  setUserCenterSubTab: (tab: 'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security') => void;
+  navigateToUserCenter: (tab?: 'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security') => void;
   toggleMarketColorMode: () => void;
   enterWorkspaceWithTransition: (targetView?: WorkspaceView) => void;
   navigateToStockDetail: (symbol: string) => void;
   addFactorToLibrary: (factor: any) => void;
   buyStock: (symbol: string, quantity: number, price: number) => boolean;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (payload: any) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -35,9 +50,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [marketColorMode, setMarketColorMode] = useState<MarketColorMode>('CN');
   const [isCmdKOpen, setIsCmdKOpen] = useState<boolean>(false);
   const [isAskAIOpen, setIsAskAIOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [selectedBacktestId, setSelectedBacktestId] = useState<string>('bt_mom_60_v1');
   const [paperAccount] = useState<PaperAccount>(mockPaperAccount);
   const [isTransitioningToWorkspace, setIsTransitioningToWorkspace] = useState<boolean>(false);
+  const [userCenterSubTab, setUserCenterSubTab] = useState<'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security'>('overview');
+
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<UserProfile>(() => UserService.getProfile());
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => UserService.isAuthenticated());
 
   // Global Keyboard listener for Cmd+K / Ctrl+K
   useEffect(() => {
@@ -51,8 +73,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Check auth session on boot
+  useEffect(() => {
+    const session = UserService.getCurrentSession();
+    if (session) {
+      setIsAuthenticated(true);
+      setCurrentUser(UserService.getProfile());
+    }
+  }, []);
+
+  const openAuthModal = (mode: 'login' | 'register' = 'login') => {
+    setAuthModalMode(mode);
+    setIsAuthModalOpen(true);
+  };
+
+  /**
+   * Action guard: returns true & runs callback if logged in,
+   * otherwise opens login modal and returns false.
+   */
+  const requireAuth = (callback?: () => void): boolean => {
+    if (isAuthenticated) {
+      if (callback) callback();
+      return true;
+    }
+    openAuthModal('login');
+    return false;
+  };
+
+  const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await UserService.loginWithD1(username, password);
+    if (res.success && res.user) {
+      setCurrentUser(res.user);
+      setIsAuthenticated(true);
+      setIsAuthModalOpen(false);
+      return { success: true };
+    }
+    return { success: false, error: formatErrorMessage(res.error, '登录失败') };
+  };
+
+  const register = async (payload: any): Promise<{ success: boolean; error?: string }> => {
+    const res = await UserService.registerWithD1(payload);
+    if (res.success && res.user) {
+      setCurrentUser(res.user);
+      setIsAuthenticated(true);
+      setIsAuthModalOpen(false);
+      return { success: true };
+    }
+    return { success: false, error: formatErrorMessage(res.error, '注册失败') };
+  };
+
+  const logout = async () => {
+    await UserService.logout();
+    setIsAuthenticated(false);
+    setCurrentUser(UserService.getProfile());
+    setCurrentRoute('landing');
+    setWorkspaceView('overview');
+    setIsAuthModalOpen(false);
+    setIsCmdKOpen(false);
+    setIsAskAIOpen(false);
+  };
+
   const toggleMarketColorMode = () => {
     setMarketColorMode((prev) => (prev === 'CN' ? 'US' : 'CN'));
+  };
+
+  const navigateToUserCenter = (tab: 'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security' = 'overview') => {
+    setUserCenterSubTab(tab);
+    setWorkspaceView('user-center');
   };
 
   const enterWorkspaceWithTransition = (targetView: WorkspaceView = 'overview') => {
@@ -98,21 +185,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         marketColorMode,
         isCmdKOpen,
         isAskAIOpen,
+        isAuthModalOpen,
+        authModalMode,
         selectedBacktestId,
         paperAccount,
         isTransitioningToWorkspace,
+        userCenterSubTab,
+        currentUser,
+        isAuthenticated,
+        setUserCenterSubTab,
+        navigateToUserCenter,
         setCurrentRoute,
         setWorkspaceView,
         setSelectedStockSymbol,
         setMarketColorMode,
         setIsCmdKOpen,
         setIsAskAIOpen,
+        setIsAuthModalOpen,
+        openAuthModal,
+        requireAuth,
         setSelectedBacktestId,
         toggleMarketColorMode,
         enterWorkspaceWithTransition,
         navigateToStockDetail,
         addFactorToLibrary,
         buyStock,
+        login,
+        register,
+        logout,
       }}
     >
       {children}
@@ -127,3 +227,4 @@ export const useApp = () => {
   }
   return context;
 };
+

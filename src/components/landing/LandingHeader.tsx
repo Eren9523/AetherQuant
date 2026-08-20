@@ -1,9 +1,9 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import { Sparkles, ArrowRight, Github } from 'lucide-react';
+import { Sparkles, ArrowRight, Github, LogIn, UserPlus, LogOut, User, ShieldCheck } from 'lucide-react';
 
 export const LandingHeader: React.FC = () => {
-  const { enterWorkspaceWithTransition } = useApp();
+  const { enterWorkspaceWithTransition, isAuthenticated, currentUser, openAuthModal, logout } = useApp();
 
   return (
     <header className="fixed top-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-md border-b border-neutral-200/50 transition-all">
@@ -43,24 +43,70 @@ export const LandingHeader: React.FC = () => {
           </a>
         </nav>
 
-        {/* Action CTAs */}
-        <div className="flex items-center gap-3">
-          <a
-            href="https://github.com"
-            target="_blank"
-            rel="noreferrer"
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
-          >
-            <Github className="w-4 h-4" />
-            GitHub
-          </a>
-          <button
-            onClick={() => enterWorkspaceWithTransition('overview')}
-            className="flex items-center gap-2 px-4 py-2 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl shadow-sm hover:shadow-md transition-all group"
-          >
-            <span>进入工作台</span>
-            <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-          </button>
+        {/* Action CTAs & Auth Controls */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {isAuthenticated ? (
+            <div className="flex items-center gap-2">
+              <button
+                id="landing-user-profile-btn"
+                onClick={() => enterWorkspaceWithTransition('user-center')}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 transition-all text-neutral-800 text-xs font-medium"
+              >
+                <img
+                  src={currentUser.avatar}
+                  alt={currentUser.name}
+                  className="w-5 h-5 rounded-full border border-neutral-300"
+                />
+                <span className="max-w-[80px] truncate">{currentUser.name}</span>
+                <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">
+                  D1在线
+                </span>
+              </button>
+              <button
+                id="landing-logout-btn"
+                onClick={() => logout()}
+                title="退出当前登录"
+                className="p-2 text-neutral-500 hover:text-red-600 hover:bg-neutral-100 rounded-xl transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+              <button
+                id="landing-enter-workspace-btn"
+                onClick={() => enterWorkspaceWithTransition('overview')}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl shadow-sm hover:shadow-md transition-all group"
+              >
+                <span>进入工作台</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                id="landing-login-btn"
+                onClick={() => openAuthModal('login')}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded-xl bg-white hover:bg-neutral-50 transition-all shadow-xs"
+              >
+                <LogIn className="w-3.5 h-3.5 text-emerald-600" />
+                <span>登录</span>
+              </button>
+              <button
+                id="landing-register-btn"
+                onClick={() => openAuthModal('register')}
+                className="hidden sm:flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded-xl bg-white hover:bg-neutral-50 transition-all shadow-xs"
+              >
+                <UserPlus className="w-3.5 h-3.5 text-cyan-600" />
+                <span>注册</span>
+              </button>
+              <button
+                id="landing-enter-workspace-direct-btn"
+                onClick={() => enterWorkspaceWithTransition('overview')}
+                className="flex items-center gap-2 px-3.5 py-2 bg-neutral-900 hover:bg-black text-white text-xs font-semibold rounded-xl shadow-sm hover:shadow-md transition-all group cursor-pointer"
+              >
+                <span>进入工作台</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>

@@ -2,10 +2,11 @@ import React, { useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { LandingPage } from './components/landing/LandingPage';
 import { WorkspaceLayout } from './components/workspace/WorkspaceLayout';
+import { AuthModal } from './components/common/AuthModal';
 import { Loader2 } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
-  const { currentRoute, isTransitioningToWorkspace } = useApp();
+  const { currentRoute, isTransitioningToWorkspace, isAuthModalOpen, setIsAuthModalOpen, authModalMode } = useApp();
 
   useEffect(() => {
     document.title = 'AetherQuant - AI量化研究平台';
@@ -29,6 +30,13 @@ const MainAppContent: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* D1 Database Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        initialMode={authModalMode}
+        onClose={() => setIsAuthModalOpen(false)}
+      />
 
       {currentRoute === 'landing' ? <LandingPage /> : <WorkspaceLayout />}
     </div>

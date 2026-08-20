@@ -1,5 +1,25 @@
 import { MarketColorMode } from '../types';
 
+export function formatErrorMessage(err: any, fallback = '未知异常'): string {
+  if (!err) return fallback;
+  if (typeof err === 'string') return err;
+  if (typeof err === 'object') {
+    if (typeof err.message === 'string' && err.message) return err.message;
+    if (typeof err.error === 'string' && err.error) return err.error;
+    if (err.error && typeof err.error === 'object') {
+      if (typeof err.error.message === 'string' && err.error.message) return err.error.message;
+      if (typeof err.error.code === 'string' && err.error.code) return err.error.code;
+    }
+    if (typeof err.code === 'string' && err.code) return err.code;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return fallback;
+    }
+  }
+  return String(err);
+}
+
 export function formatCurrency(
   value: number,
   currency: 'CNY' | 'USD' = 'CNY',

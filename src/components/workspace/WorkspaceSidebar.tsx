@@ -22,6 +22,7 @@ import {
   ShieldAlert,
   Clock,
   Settings,
+  User,
   ChevronDown,
   ChevronRight,
   PanelLeftClose,
@@ -167,7 +168,7 @@ export const WorkspaceSidebar: React.FC = () => {
       ],
     },
     {
-      groupName: '交易与组合',
+      groupName: '交易与管控',
       key: 'trading',
       items: [
         {
@@ -176,14 +177,9 @@ export const WorkspaceSidebar: React.FC = () => {
           icon: <Briefcase className="w-4 h-4" />,
         },
         {
-          id: 'trading',
-          label: '模拟交易 & QMT',
-          icon: <TrendingUp className="w-4 h-4" />,
-        },
-        {
-          id: 'risk',
-          label: '风险控制卫士',
-          icon: <ShieldAlert className="w-4 h-4" />,
+          id: 'admin-console',
+          label: '后台管理 (管理员专用)',
+          icon: <ShieldAlert className="w-4 h-4 text-purple-600" />,
         },
         {
           id: 'automation',
@@ -198,7 +194,7 @@ export const WorkspaceSidebar: React.FC = () => {
       items: [
         {
           id: 'settings',
-          label: '系统与 API 设置',
+          label: '系统偏好设置',
           icon: <Settings className="w-4 h-4" />,
         },
       ],

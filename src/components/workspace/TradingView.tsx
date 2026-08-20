@@ -3,13 +3,17 @@ import { useApp } from '../../context/AppContext';
 import { TrendingUp, Lock, CheckCircle2, Send, AlertTriangle } from 'lucide-react';
 
 export const TradingView: React.FC = () => {
-  const { paperAccount, buyStock, selectedStockSymbol } = useApp();
+  const { paperAccount, buyStock, selectedStockSymbol, requireAuth } = useApp();
   const [symbol, setSymbol] = useState(selectedStockSymbol);
   const [quantity, setQuantity] = useState(100);
   const [price, setPrice] = useState(1482.35);
   const [tradeMessage, setTradeMessage] = useState('');
 
   const handleTrade = (action: 'BUY' | 'SELL') => {
+    if (!requireAuth(() => handleTrade(action))) {
+      return;
+    }
+
     if (action === 'BUY') {
       const success = buyStock(symbol, quantity, price);
       if (success) {

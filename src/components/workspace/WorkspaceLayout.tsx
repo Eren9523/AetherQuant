@@ -19,6 +19,8 @@ import { TradingView } from './TradingView';
 import { RiskView } from './RiskView';
 import { AutomationView } from './AutomationView';
 import { SettingsView } from './SettingsView';
+import { UserCenterView } from './UserCenterView';
+import { AdminConsoleView } from './AdminConsoleView';
 
 export const WorkspaceLayout: React.FC = () => {
   const { workspaceView } = useApp();
@@ -59,6 +61,10 @@ export const WorkspaceLayout: React.FC = () => {
         return <AutomationView />;
       case 'settings':
         return <SettingsView />;
+      case 'user-center':
+        return <UserCenterView />;
+      case 'admin-console':
+        return <AdminConsoleView />;
       default:
         return <DashboardView />;
     }

@@ -259,7 +259,7 @@ const defaultPromptsFallback: PromptCard[] = [
 ];
 
 export const AIResearchView: React.FC = () => {
-  const { workspaceView, selectedStockSymbol, navigateToStockDetail, addFactorToLibrary } = useApp();
+  const { workspaceView, selectedStockSymbol, navigateToStockDetail, addFactorToLibrary, requireAuth } = useApp();
 
   // Primary Tab: Chat vs Research Docs
   const [activeTab, setActiveTab] = useState<'chat' | 'docs'>(
@@ -533,6 +533,10 @@ export const AIResearchView: React.FC = () => {
   const handleSend = async (overrideText?: string) => {
     const query = (overrideText || inputPrompt).trim();
     if (!query || loading) return;
+
+    if (!requireAuth(() => handleSend(overrideText))) {
+      return;
+    }
 
     // Generate immediate clean heuristic title from user prompt
     const instantTitle = extractHeuristicTitle(query, selectedStockSymbol);

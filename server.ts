@@ -22,8 +22,9 @@ async function startServer() {
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-  // API v1 Router
+  // API Routers
   app.use('/api/v1', apiRouter);
+  app.use('/api', apiRouter);
 
   // Health check endpoint
   app.get('/api/health', (req, res) => {

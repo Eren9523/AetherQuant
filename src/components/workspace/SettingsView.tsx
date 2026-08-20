@@ -40,6 +40,7 @@ import {
   BarChart2,
   ShieldCheck,
   Terminal,
+  ChevronRight,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -62,10 +63,8 @@ const IOSToggle: React.FC<{
         checked ? 'bg-blue-600' : 'bg-slate-200'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
-      <motion.span
-        layout
-        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md transform ring-0 transition duration-200 ease-in-out ${
+      <span
+        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md transform ring-0 transition-transform duration-200 ease-out ${
           checked ? 'translate-x-5' : 'translate-x-0'
         }`}
       />
@@ -313,10 +312,9 @@ export const SettingsView: React.FC = () => {
     triggerToast('已恢复出厂默认设置');
   };
 
-  // Subtab list
+  // Subtab list (API settings migrated to User Center module as requested)
   const navTabs = [
     { id: 'appearance', label: '外观与布局', icon: Laptop, badge: 'UI' },
-    { id: 'service', label: '服务与模型', icon: Server, badge: 'AI' },
     { id: 'language', label: '语言与地区', icon: Globe },
     { id: 'general', label: '通用偏好', icon: Settings },
     { id: 'notifications', label: '交互与通知', icon: Bell },
@@ -332,7 +330,6 @@ export const SettingsView: React.FC = () => {
       (t) =>
         t.label.toLowerCase().includes(q) ||
         (t.id === 'appearance' && (q.includes('主题') || q.includes('深色') || q.includes('浅色') || q.includes('动画') || q.includes('布局') || q.includes('密度') || q.includes('侧边栏') || q.includes('红绿') || q.includes('涨跌'))) ||
-        (t.id === 'service' && (q.includes('api') || q.includes('deepseek') || q.includes('模型') || q.includes('key') || q.includes('token') || q.includes('思考') || q.includes('延迟'))) ||
         (t.id === 'language' && (q.includes('语言') || q.includes('时区') || q.includes('日期') || q.includes('数字') || q.includes('时间'))) ||
         (t.id === 'notifications' && (q.includes('webhook') || q.includes('通知') || q.includes('钉钉') || q.includes('飞书') || q.includes('企微') || q.includes('告警'))) ||
         (t.id === 'risk' && (q.includes('风控') || q.includes('仓位') || q.includes('回撤') || q.includes('熔断') || q.includes('算法') || q.includes('twap'))) ||
@@ -506,17 +503,12 @@ export const SettingsView: React.FC = () => {
 
         {/* Right Main Settings Body */}
         <div className="md:col-span-9">
-          <AnimatePresence mode="wait">
-            {/* TAB 1: 外观与布局 (Exact Matching Screenshot Image) */}
-            {activeTab === 'appearance' && (
-              <motion.div
-                key="tab-appearance"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7"
-              >
+          {/* TAB 1: 外观与布局 (Exact Matching Screenshot Image) */}
+          {activeTab === 'appearance' && (
+            <div
+              key="tab-appearance"
+              className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
+            >
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">外观与布局</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -749,447 +741,62 @@ export const SettingsView: React.FC = () => {
                     </select>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )}
 
-            {/* TAB 2: 服务配置 / DeepSeek API (Dual-Channel Architecture) */}
+            {/* TAB 2: 服务与 API 配置已迁移至个人中心 (MIGRATED TO USER CENTER) */}
             {activeTab === 'service' && (
-              <motion.div
+              <div
                 key="tab-service"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"
+                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-6 animate-in fade-in duration-150"
               >
-                {/* Left Forms (8 cols) */}
-                <div className="lg:col-span-8 space-y-6">
-                  {/* Channel Switch Selector */}
-                  <div className="p-5 md:p-6 bg-white rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                          <Cpu className="w-4 h-4 text-blue-600" />
-                          <span>AI 推理通道架构</span>
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          支持默认的 Cloudflare 边缘安全网关或接入独立自定义 API 密钥，自由切换
-                        </p>
-                      </div>
-                      <div className="flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 self-start sm:self-auto shadow-2xs">
-                        <button
-                          type="button"
-                          onClick={() => setChannelMode('system')}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                            channelMode === 'system'
-                              ? 'bg-white text-blue-700 shadow-xs font-bold'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          系统预置通道
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setChannelMode('custom')}
-                          className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                            channelMode === 'custom'
-                              ? 'bg-white text-blue-700 shadow-xs font-bold'
-                              : 'text-slate-600 hover:text-slate-900'
-                          }`}
-                        >
-                          自定义 API (BYO Key)
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Dual Mode Overview Card */}
-                    {channelMode === 'system' ? (
-                      <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-slate-50 border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span className="text-xs font-bold text-slate-900">Cloudflare 边缘加密通道已激活</span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
-                              免配密钥 · 开箱即用
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-600 leading-relaxed">
-                            所有量化推理和大模型分析请求均由 Cloudflare Workers 边缘网关自动加密转发与鉴权，无需用户提供个人 API Key。
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleTestConnection}
-                          disabled={isTestingConnection}
-                          className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
-                        >
-                          {isTestingConnection ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                          ) : (
-                            <Zap className="w-3.5 h-3.5 text-blue-600" />
-                          )}
-                          <span>{isTestingConnection ? '测试中...' : '测试网关连通性'}</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/70 via-orange-50/40 to-slate-50 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full ${apiKey ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
-                            <span className="text-xs font-bold text-slate-900">自定义独立 API 模式</span>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${apiKey ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} border border-amber-200`}>
-                              {apiKey ? '已配置独立密钥' : '待配置密钥'}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-600 leading-relaxed">
-                            使用您在 DeepSeek、OpenAI 或私有 Ollama 申请的独立凭据，由客户端携带或由加密网关直接直连第三方提供商。
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleTestConnection}
-                          disabled={isTestingConnection}
-                          className="px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 shadow-2xs transition-all flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-50"
-                        >
-                          {isTestingConnection ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-600" />
-                          ) : (
-                            <Zap className="w-3.5 h-3.5 text-amber-600" />
-                          )}
-                          <span>{isTestingConnection ? '测试中...' : '验证自定义 Key'}</span>
-                        </button>
-                      </div>
-                    )}
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <Key className="w-6 h-6" />
                   </div>
-
-                  {/* Top DeepSeek API Status Card */}
-                  <div className="p-6 bg-white rounded-3xl border border-slate-200/80 shadow-sm space-y-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-2xs">
-                          <Server className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-base font-bold text-slate-900">
-                              {channelMode === 'system' ? 'Cloudflare 系统通道 (System Gateway)' : 'DeepSeek / 自定义 API'}
-                            </h3>
-                            {connectionStatus === 'success' ? (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200/60 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                已连接 {latencyMs ? `(${latencyMs}ms)` : ''}
-                              </span>
-                            ) : channelMode === 'system' ? (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-200/60">
-                                系统网关在线
-                              </span>
-                            ) : apiKey ? (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-600 border border-blue-200/60">
-                                自定义密钥就绪
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-600 border border-amber-200/60">
-                                待配置独立 API Key
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            当前模型: {selectedModel === 'v4-flash' ? 'deepseek-chat (V4 Flash)' : 'deepseek-reasoner (V4 Pro)'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* API Address & Key Details */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100 text-xs font-mono">
-                      <div>
-                        <span className="text-slate-400 block font-sans text-[11px]">
-                          {channelMode === 'system' ? '系统边缘网关' : 'API 接口地址 (Endpoint)'}
-                        </span>
-                        <span className="font-semibold text-slate-800 text-xs truncate block mt-0.5">
-                          {channelMode === 'system' ? 'https://cloudflare-worker-gateway / TLS 1.3' : apiEndpoint}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-400 block font-sans text-[11px]">
-                          {channelMode === 'system' ? '鉴权模式' : 'API 密钥 (API Key)'}
-                        </span>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="font-semibold text-slate-800 text-xs">
-                            {channelMode === 'system'
-                              ? 'Cloudflare 托管安全凭据'
-                              : apiKey
-                              ? 'sk-••••••••••••'
-                              : '未配置 (点击右侧配置)'}
-                          </span>
-                          {channelMode === 'custom' && (
-                            <button
-                              type="button"
-                              onClick={() => setShowApiKeyModal(true)}
-                              className="text-blue-600 hover:text-blue-700 font-sans font-medium text-xs underline cursor-pointer"
-                            >
-                              配置 Key
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Model Inference Parameters Card (Screenshot 3) */}
-                  <div className="p-6 md:p-7 bg-white rounded-3xl border border-slate-200/80 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                        <Sliders className="w-4 h-4 text-blue-600" />
-                        <span>模型推理参数</span>
-                      </div>
-
-                      {/* Presets Switch (Enabled for custom mode) */}
-                      {channelMode === 'custom' && (
-                        <div className="flex items-center gap-1 text-xs">
-                          <span className="text-slate-400 mr-1 text-[11px]">服务预设:</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setApiPreset('deepseek');
-                              setApiEndpoint('https://api.deepseek.com');
-                            }}
-                            className={`px-2 py-0.5 rounded-md font-medium text-[11px] cursor-pointer ${
-                              apiPreset === 'deepseek'
-                                ? 'bg-blue-100 text-blue-700 font-bold'
-                                : 'text-slate-500 hover:bg-slate-100'
-                            }`}
-                          >
-                            DeepSeek 官方
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setApiPreset('ollama');
-                              setApiEndpoint('http://localhost:11434/v1');
-                            }}
-                            className={`px-2 py-0.5 rounded-md font-medium text-[11px] cursor-pointer ${
-                              apiPreset === 'ollama'
-                                ? 'bg-blue-100 text-blue-700 font-bold'
-                                : 'text-slate-500 hover:bg-slate-100'
-                            }`}
-                          >
-                            私有化 (Ollama)
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* API Proxy / Endpoint for custom mode */}
-                    {channelMode === 'custom' && (
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700 block">
-                          API 接口代理地址 (Endpoint)
-                        </label>
-                        <input
-                          type="text"
-                          value={apiEndpoint}
-                          onChange={(e) => setApiEndpoint(e.target.value)}
-                          placeholder="https://api.deepseek.com"
-                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm font-mono text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all shadow-2xs"
-                        />
-                      </div>
-                    )}
-
-                    {/* Model Select Cards (Screenshot 3) */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-700 block">
-                        默认推理模型
-                      </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                        {/* DeepSeek V4 Flash */}
-                        <div
-                          onClick={() => setSelectedModel('v4-flash')}
-                          className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-start justify-between ${
-                            selectedModel === 'v4-flash'
-                              ? 'border-blue-600 bg-blue-50/20 shadow-xs'
-                              : 'border-slate-200 hover:border-slate-300 bg-white'
-                          }`}
-                        >
-                          <div>
-                            <div className="font-bold text-xs md:text-sm text-slate-900">
-                              DeepSeek V4 Flash
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-1">
-                              标准对话与推荐，速度极快
-                            </div>
-                          </div>
-                          {selectedModel === 'v4-flash' && (
-                            <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0 mt-0.5">
-                              <Check className="w-3 h-3 stroke-[3]" />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* DeepSeek V4 Pro */}
-                        <div
-                          onClick={() => setSelectedModel('v4-pro')}
-                          className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex items-start justify-between ${
-                            selectedModel === 'v4-pro'
-                              ? 'border-blue-600 bg-blue-50/20 shadow-xs'
-                              : 'border-slate-200 hover:border-slate-300 bg-white'
-                          }`}
-                        >
-                          <div>
-                            <div className="font-bold text-xs md:text-sm text-slate-900">
-                              DeepSeek V4 Pro
-                            </div>
-                            <div className="text-[11px] text-slate-500 mt-1">
-                              深度思考，逻辑更强
-                            </div>
-                          </div>
-                          {selectedModel === 'v4-pro' && (
-                            <div className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-white shrink-0 mt-0.5">
-                              <Check className="w-3 h-3 stroke-[3]" />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 2-Column Select Parameters */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700 block">
-                          深度思考 (Thinking)
-                        </label>
-                        <select
-                          value={deepThinking ? 'enabled' : 'disabled'}
-                          onChange={(e) => setDeepThinking(e.target.value === 'enabled')}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all shadow-2xs"
-                        >
-                          <option value="enabled">开启 (Enabled)</option>
-                          <option value="disabled">关闭 (Disabled)</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700 block">
-                          推理强度 (Reasoning Effort)
-                        </label>
-                        <select
-                          value={reasoningEffort}
-                          onChange={(e) => setReasoningEffort(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all shadow-2xs"
-                        >
-                          <option value="medium">中等 (Medium)</option>
-                          <option value="high">高强度 (High)</option>
-                          <option value="low">轻量 (Low)</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700 block">
-                          流式传输 (Streaming)
-                        </label>
-                        <select
-                          value={streaming ? 'enabled' : 'disabled'}
-                          onChange={(e) => setStreaming(e.target.value === 'enabled')}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all shadow-2xs"
-                        >
-                          <option value="enabled">开启 (Enabled)</option>
-                          <option value="disabled">关闭 (Disabled)</option>
-                        </select>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700 block">
-                          采样温度 (Temperature: {temperature})
-                        </label>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          value={temperature}
-                          onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                          className="w-full mt-2 accent-blue-600 cursor-pointer"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700 block">
-                          超时时间 (毫秒 Timeout)
-                        </label>
-                        <input
-                          type="number"
-                          value={timeoutMs}
-                          onChange={(e) => setTimeoutMs(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm font-mono text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all shadow-2xs"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-slate-700 block">
-                          最大重试次数 (Max Retry)
-                        </label>
-                        <input
-                          type="number"
-                          value={maxRetries}
-                          onChange={(e) => setMaxRetries(e.target.value)}
-                          className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm font-mono text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all shadow-2xs"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Guidance Card (Screenshot 3 - 4 cols) */}
-                <div className="lg:col-span-4 bg-white p-6 md:p-7 rounded-3xl border border-slate-200/80 shadow-sm space-y-5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-                      <Cpu className="w-4 h-4" />
-                    </div>
-                    <h3 className="text-sm font-bold text-slate-900">模型切换须知</h3>
-                  </div>
-
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    系统目前主要支持 DeepSeek 官方接口服务。
-                  </p>
-
-                  <ul className="space-y-3 text-xs text-slate-600 leading-relaxed">
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
-                      <span>
-                        <strong className="text-slate-900">V4 Flash</strong>：适合基础模型匹配，响应迅速，支持 JSON 结构化输出。
-                      </span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
-                      <span>
-                        <strong className="text-slate-900">V4 Pro</strong>：会产生思考过程。适用于复杂的推荐方案组合与图谱推理。
-                      </span>
-                    </li>
-                  </ul>
-
-                  {/* Warning Callout from Screenshot 3 */}
-                  <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-200/70 text-xs text-amber-900 space-y-1.5">
-                    <div className="font-bold flex items-center gap-1.5 text-amber-800">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>注意事项</span>
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-amber-800/90 font-normal">
-                      推荐模块的 JSON 格式化强依赖于 V4 Flash 模型的 JSON 输出能力。如果切换至 R1 模型，系统会自动进行正则匹配提取 JSON，但可能偶发格式异常。
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">API 密钥与模型推理网关配置</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      本平台 API 与大模型凭据设置现已统一整合至【个人中心】模块承载。
                     </p>
                   </div>
                 </div>
-              </motion.div>
+
+                <div className="p-6 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-4">
+                  <div className="space-y-1.5 text-xs text-slate-700">
+                    <div className="font-bold text-blue-950 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                      <span>个人中心已全面承载以下配置功能：</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-slate-600 pl-1 pt-1">
+                      <li>DeepSeek 官方直连 API Key 与 Tushare Pro 数据 Token 配置</li>
+                      <li>Cloudflare Workers 边缘系统网关与自定义 BYO Key 自由切换</li>
+                      <li>大模型采样温度 (Temperature)、深度思考强度 (Reasoning Effort) 与超时控制</li>
+                      <li>连通性与低时延实时测速</li>
+                      <li>基于 Cloudflare D1 数据库的账户多端加密同步</li>
+                    </ul>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setWorkspaceView('user-center')}
+                      className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs flex items-center gap-2 transition-all cursor-pointer"
+                    >
+                      <Key className="w-4 h-4" />
+                      <span>立即前往个人中心配置 API</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* TAB 3: 语言与地区 (Matching Screenshot 1) */}
             {activeTab === 'language' && (
-              <motion.div
+              <div
                 key="tab-language"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7"
+                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
               >
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">语言与地区</h2>
@@ -1318,18 +925,14 @@ export const SettingsView: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* TAB 4: 通用偏好 (General) */}
             {activeTab === 'general' && (
-              <motion.div
+              <div
                 key="tab-general"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7"
+                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
               >
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">通用偏好</h2>
@@ -1416,18 +1019,14 @@ export const SettingsView: React.FC = () => {
                     <span>立即清除缓存</span>
                   </button>
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* TAB 5: 交互与通知 (Notifications) */}
             {activeTab === 'notifications' && (
-              <motion.div
+              <div
                 key="tab-notifications"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7"
+                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
               >
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">交互与通知</h2>
@@ -1522,18 +1121,14 @@ export const SettingsView: React.FC = () => {
                     <IOSToggle checked={alertOnFactorIC} onChange={setAlertOnFactorIC} />
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* TAB 6: 交易与风控 (Trading & Risk) */}
             {activeTab === 'risk' && (
-              <motion.div
+              <div
                 key="tab-risk"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7"
+                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
               >
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">交易与风控默认参数</h2>
@@ -1628,18 +1223,14 @@ export const SettingsView: React.FC = () => {
                     交易所合规标准
                   </span>
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {/* TAB 7: 实验与关于 (Matching Screenshot 2) */}
             {activeTab === 'about' && (
-              <motion.div
+              <div
                 key="tab-about"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.18 }}
-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-8"
+                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-8 animate-in fade-in duration-150"
               >
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">实验与关于</h2>
@@ -1746,9 +1337,8 @@ export const SettingsView: React.FC = () => {
                     <span>访问帮助中心</span>
                   </button>
                 </div>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
         </div>
       </div>
 
