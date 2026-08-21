@@ -1,6 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Sparkles, ArrowRight, Github, LogIn, UserPlus, LogOut, User, ShieldCheck } from 'lucide-react';
+import { AetherLogo } from '../common/AetherLogo';
 
 export const LandingHeader: React.FC = () => {
   const { enterWorkspaceWithTransition, isAuthenticated, currentUser, openAuthModal, logout } = useApp();
@@ -9,21 +10,9 @@ export const LandingHeader: React.FC = () => {
     <header className="fixed top-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-md border-b border-neutral-200/50 transition-all">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Brand */}
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-          <div className="w-8 h-8 rounded-xl overflow-hidden bg-white flex items-center justify-center text-neutral-900 font-bold text-sm shadow-xs border border-neutral-200/90 p-0.5">
-            <img
-              src="/logo.png"
-              alt="AQ Logo"
-              className="w-full h-full object-contain rounded-lg"
-              onError={(e) => {
-                (e.currentTarget as HTMLElement).style.display = 'none';
-              }}
-            />
-          </div>
-          <span className="text-lg font-bold text-neutral-900 tracking-tight font-sans">
-            Aether<span className="font-light text-neutral-500">Quant</span>
-          </span>
-          <span className="px-2 py-0.5 text-[10px] font-mono font-medium bg-neutral-100 text-neutral-600 rounded-full border border-neutral-200/80">
+        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+          <AetherLogo size="md" showText={true} textClassName="text-lg" />
+          <span className="hidden sm:inline-flex px-2 py-0.5 text-[10px] font-mono font-medium bg-neutral-100 text-neutral-600 rounded-full border border-neutral-200/80">
             AI Native Quant
           </span>
         </div>

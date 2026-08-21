@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ArrowRight, BookOpen, RotateCcw } from 'lucide-react';
+import { AetherLogo } from '../common/AetherLogo';
 
 export const LandingFooter: React.FC = () => {
   const { enterWorkspaceWithTransition } = useApp();
@@ -116,10 +117,8 @@ export const LandingFooter: React.FC = () => {
         {/* Footer Subtext */}
         <div className="pt-20 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-400 gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-6 h-6 rounded-lg overflow-hidden bg-white flex items-center justify-center border border-neutral-200/80 shadow-2xs p-0.5">
-              <img src="/logo.png" alt="AQ" className="w-full h-full object-contain rounded-sm" />
-            </div>
-            <span className="font-bold text-neutral-900">AetherQuant</span>
+            <AetherLogo size="xs" showText={true} textClassName="text-xs" />
+            <span className="text-neutral-300">|</span>
             <span>© 2026 AetherQuant AI Lab. 版权所有。</span>
           </div>
           <div className="flex items-center gap-6 text-neutral-500 font-medium">

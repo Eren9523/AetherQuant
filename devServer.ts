@@ -8,6 +8,7 @@
  */
 import { createServer as createHttpServer } from 'http';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { getRequestListener } from '@hono/node-server';
@@ -15,6 +16,20 @@ import { getPlatformProxy } from 'wrangler';
 import workerApp from './worker/src/index';
 
 dotenv.config();
+
+const MIME_TYPES: Record<string, string> = {
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.json': 'application/json',
+  '.txt': 'text/plain',
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'application/javascript',
+};
 
 async function startWorkerDevServer() {
   const PORT = 3000;
@@ -69,6 +84,20 @@ async function startWorkerDevServer() {
     if (url.startsWith('/api/') || url === '/api') {
       res.setHeader('X-Gateway-Engine', 'Cloudflare-Worker-Hono');
       return workerFetchHandler(req, res);
+    }
+
+    // Serve public static assets (favicons, logos, icons) directly
+    const cleanPath = url.split('?')[0];
+    const publicFilePath = path.join(process.cwd(), 'public', cleanPath.replace(/^\//, ''));
+    if (cleanPath !== '/' && fs.existsSync(publicFilePath) && fs.statSync(publicFilePath).isFile()) {
+      const ext = path.extname(publicFilePath).toLowerCase();
+      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+      res.writeHead(200, {
+        'Content-Type': contentType,
+        'Cache-Control': 'public, max-age=86400',
+        'Access-Control-Allow-Origin': '*',
+      });
+      return fs.createReadStream(publicFilePath).pipe(res);
     }
 
     // Serve Frontend Assets via Vite in Dev, or Static Dist in Prod
