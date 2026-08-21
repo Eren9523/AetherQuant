@@ -10,11 +10,11 @@ export const LandingHeader: React.FC = () => {
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-          <div className="w-8 h-8 rounded-xl overflow-hidden bg-neutral-900 flex items-center justify-center text-white font-bold text-sm shadow-xs border border-neutral-200/50">
+          <div className="w-8 h-8 rounded-xl overflow-hidden bg-white flex items-center justify-center text-neutral-900 font-bold text-sm shadow-xs border border-neutral-200/90 p-0.5">
             <img
               src="/logo.png"
               alt="AQ Logo"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-contain rounded-lg"
               onError={(e) => {
                 (e.currentTarget as HTMLElement).style.display = 'none';
               }}

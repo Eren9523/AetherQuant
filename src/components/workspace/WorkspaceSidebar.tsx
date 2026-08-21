@@ -216,11 +216,11 @@ export const WorkspaceSidebar: React.FC = () => {
               onClick={() => setCurrentRoute('landing')}
               className="flex items-center gap-2.5 cursor-pointer group"
             >
-              <div className="w-7 h-7 rounded-lg overflow-hidden bg-neutral-900 flex items-center justify-center text-white text-xs font-bold shadow-xs border border-neutral-200/50">
+              <div className="w-7 h-7 rounded-lg overflow-hidden bg-white flex items-center justify-center text-neutral-900 text-xs font-bold shadow-xs border border-neutral-200/80 p-0.5">
                 <img
                   src="/logo.png"
                   alt="AetherQuant Logo"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain rounded-md"
                   onError={(e) => {
                     (e.currentTarget as HTMLElement).style.display = 'none';
                   }}
@@ -234,12 +234,12 @@ export const WorkspaceSidebar: React.FC = () => {
           {collapsed && (
             <div
               onClick={() => setCurrentRoute('landing')}
-              className="w-8 h-8 rounded-lg overflow-hidden bg-neutral-900 text-white flex items-center justify-center font-bold text-xs mx-auto cursor-pointer shadow-xs border border-neutral-200/50"
+              className="w-8 h-8 rounded-lg overflow-hidden bg-white text-neutral-900 flex items-center justify-center font-bold text-xs mx-auto cursor-pointer shadow-xs border border-neutral-200/80 p-0.5"
             >
               <img
                 src="/logo.png"
                 alt="AQ"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain rounded-md"
                 onError={(e) => {
                   (e.currentTarget as HTMLElement).style.display = 'none';
                 }}

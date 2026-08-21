@@ -223,25 +223,7 @@ export const UserService = {
         return { success: false, error: formatErrorMessage(data.error, 'D1 身份验证失败，请检查账号密码') };
       }
     } catch (e: any) {
-      // Fallback local verification for client offline state
-      if (username.trim().toLowerCase() === 'admin' && password.trim() === 'penguin778') {
-        const userProfile: UserProfile = {
-          ...this.getProfile(),
-          name: '系统管理员',
-          role: 'admin',
-          email: 'admin@aetherquant.io',
-          avatar: this.getProfile().avatar || 'https://api.dicebear.com/7.x/open-peeps/svg?seed=QuantLead&backgroundColor=f8fafc',
-        };
-        this.updateProfile(userProfile);
-        localStorage.setItem(STORAGE_AUTH_SESSION_KEY, JSON.stringify({
-          token: `local_tok_${Date.now()}`,
-          user: userProfile,
-          loginAt: new Date().toISOString(),
-          d1Verified: true,
-        }));
-        return { success: true, user: userProfile };
-      }
-      return { success: false, error: formatErrorMessage(e, '网络连接异常或服务未响应') };
+      return { success: false, error: formatErrorMessage(e, '网络连接异常或服务未响应，请稍后重试') };
     }
   },
 
