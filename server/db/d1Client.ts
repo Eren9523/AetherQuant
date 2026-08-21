@@ -204,27 +204,65 @@ class D1DatabaseClient {
       return { results: [newRecord as any], success: true, meta: { changes: 1 } };
     }
 
-    // 4. UPDATE
+    // 4. UPDATE with SET parsing
     if (upper.startsWith('UPDATE')) {
-      const match = trimmed.match(/UPDATE\s+([a-zA-Z0-9_]+)/i);
-      const tableName = match ? match[1] : '';
+      const match = trimmed.match(/UPDATE\s+([a-zA-Z0-9_]+)\s+SET\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+))?$/i);
+      if (!match) return { results: [], success: false };
+
+      const tableName = match[1];
+      const setClause = match[2];
+      const whereClause = match[3] ? match[3].trim() : '';
       const list = this.localTables[tableName] || [];
 
-      if (upper.includes('WHERE')) {
-        const whereClause = trimmed.substring(trimmed.search(/WHERE/i) + 5).trim();
-        let changed = 0;
-        list.forEach((item) => {
-          if (this.evalWhere(whereClause, item, params)) {
-            item.updated_at = new Date().toISOString();
-            changed++;
+      // Parse SET clause
+      // e.g. "avatar_url = ?, updated_at = ?" or "name = 'John', age = 30"
+      const setAssignments: { column: string; rawVal?: string; isParam?: boolean }[] = [];
+      const setParts = setClause.split(/,(?![^(]*\))/); // split on commas not inside parentheses
+
+      let paramIdx = 0;
+      for (const part of setParts) {
+        const eqIdx = part.indexOf('=');
+        if (eqIdx !== -1) {
+          const col = part.substring(0, eqIdx).trim().replace(/[`"']/g, '');
+          const valExpr = part.substring(eqIdx + 1).trim();
+          if (valExpr === '?') {
+            setAssignments.push({ column: col, isParam: true });
+            paramIdx++;
+          } else {
+            const raw = valExpr.replace(/^['"]|['"]$/g, '');
+            setAssignments.push({ column: col, rawVal: raw, isParam: false });
           }
-        });
-        this.saveLocalStorage();
-        return { results: [], success: true, meta: { changes: changed } };
+        }
       }
 
+      // Remaining parameters are for WHERE clause
+      const whereParams = params.slice(paramIdx);
+      const setParams = params.slice(0, paramIdx);
+
+      let changed = 0;
+      let setParamCounter = 0;
+      const computedUpdates: Record<string, any> = {};
+      for (const assign of setAssignments) {
+        if (assign.isParam) {
+          computedUpdates[assign.column] = setParams[setParamCounter++];
+        } else {
+          computedUpdates[assign.column] = assign.rawVal;
+        }
+      }
+
+      list.forEach((item) => {
+        const matches = !whereClause || this.evalWhereWithParams(whereClause, item, whereParams);
+        if (matches) {
+          Object.assign(item, computedUpdates);
+          if (!computedUpdates.updated_at) {
+            item.updated_at = new Date().toISOString();
+          }
+          changed++;
+        }
+      });
+
       this.saveLocalStorage();
-      return { results: [], success: true, meta: { changes: 1 } };
+      return { results: [], success: true, meta: { changes: changed } };
     }
 
     // 5. DELETE
@@ -251,26 +289,42 @@ class D1DatabaseClient {
   }
 
   private evalWhere(whereClause: string, record: Record<string, any>, params: any[]): boolean {
+    return this.evalWhereWithParams(whereClause, record, params);
+  }
+
+  private evalWhereWithParams(whereClause: string, record: Record<string, any>, params: any[]): boolean {
     if (!whereClause || !record) return true;
 
-    // Handle OR expressions e.g. "id = ? OR email = ?" or "LOWER(username) = ? OR LOWER(email) = ?"
+    // Handle OR expressions e.g. "id = ? OR LOWER(username) = LOWER(?)"
     if (/\s+OR\s+/i.test(whereClause)) {
       const parts = whereClause.split(/\s+OR\s+/i);
-      return parts.some((p) => this.evalSingleCondition(p.trim(), record, params));
+      let paramCursor = 0;
+      return parts.some((part) => {
+        const qCount = (part.match(/\?/g) || []).length;
+        const partParams = params.slice(paramCursor, paramCursor + qCount);
+        paramCursor += qCount;
+        return this.evalSingleCondition(part.trim(), record, partParams);
+      });
     }
 
     // Handle AND expressions e.g. "user_id = ? AND role = ?"
     if (/\s+AND\s+/i.test(whereClause)) {
       const parts = whereClause.split(/\s+AND\s+/i);
-      return parts.every((p) => this.evalSingleCondition(p.trim(), record, params));
+      let paramCursor = 0;
+      return parts.every((part) => {
+        const qCount = (part.match(/\?/g) || []).length;
+        const partParams = params.slice(paramCursor, paramCursor + qCount);
+        paramCursor += qCount;
+        return this.evalSingleCondition(part.trim(), record, partParams);
+      });
     }
 
     return this.evalSingleCondition(whereClause.trim(), record, params);
   }
 
   private evalSingleCondition(cond: string, record: Record<string, any>, params: any[]): boolean {
-    // 1. Check for functions like LOWER(col) = ? or LOWER(col) = 'val'
-    const lowerFuncMatch = cond.match(/LOWER\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*=\s*(?:\?|'([^']*)')/i);
+    // 1. Check for functions like LOWER(col) = ? or LOWER(col) = LOWER(?) or LOWER(col) = 'val'
+    const lowerFuncMatch = cond.match(/LOWER\s*\(\s*([a-zA-Z0-9_]+)\s*\)\s*=\s*(?:LOWER\s*\(\s*\?\s*\)|\?|'([^']*)')/i);
     if (lowerFuncMatch) {
       const field = lowerFuncMatch[1];
       const targetVal = lowerFuncMatch[2] !== undefined ? lowerFuncMatch[2].toLowerCase() : (params[0] !== undefined ? String(params[0]).toLowerCase() : '');

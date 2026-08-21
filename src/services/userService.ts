@@ -390,6 +390,52 @@ export const UserService = {
   },
 
   /**
+   * Fetch and sync the latest user profile directly from Cloudflare D1
+   */
+  async fetchRemoteProfile(): Promise<UserProfile | null> {
+    const session = this.getCurrentSession();
+    if (!session || !session.token) return null;
+
+    try {
+      const res = await fetch('/api/v1/auth/me', {
+        headers: {
+          'Authorization': `Bearer ${session.token}`,
+        },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { success?: boolean; user?: any };
+        if (data.success && data.user) {
+          const userProfile: UserProfile = {
+            id: data.user.id,
+            username: data.user.username,
+            name: data.user.name || data.user.username,
+            avatar: data.user.avatarUrl || data.user.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(data.user.username || 'QuantLead')}&backgroundColor=f8fafc`,
+            title: data.user.role === 'admin' ? 'Senior Quant Lead · 主管合伙人' : data.user.role === 'quant_lead' ? 'CTA & Momentum Strategy Lead' : 'Quantitative Trader',
+            department: data.user.department || '量化投研中心',
+            email: data.user.email || `${data.user.username}@aetherquant.io`,
+            phone: '138****9281',
+            role: data.user.role || 'free',
+            status: 'active',
+            accountType: data.user.accountType || 'Quantitative Pro',
+            bio: '专注跨市场多因子选股模型与量化投研。',
+            lastLogin: data.user.lastLogin || new Date().toLocaleString(),
+            joinDate: data.user.createdAt || '2024-03-15',
+            apiKeyCount: 4,
+            liveTradingEnabled: true,
+          };
+          this.updateProfile(userProfile);
+          session.user = { ...session.user, ...data.user };
+          localStorage.setItem(STORAGE_AUTH_SESSION_KEY, JSON.stringify(session));
+          return userProfile;
+        }
+      }
+    } catch (e) {
+      console.warn('[UserService] fetchRemoteProfile warning:', e);
+    }
+    return null;
+  },
+
+  /**
    * Helper to compress user uploaded image file into a high-quality data URL
    */
   async compressImageFile(file: File, maxWidth = 256, maxHeight = 256, quality = 0.88): Promise<string> {

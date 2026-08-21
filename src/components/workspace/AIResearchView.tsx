@@ -201,34 +201,38 @@ function groupThreadsByDate(threads: any[]) {
   return groups;
 }
 
-function saveCachedThreads(threads: any[]) {
+function saveCachedThreads(userId: string | undefined, threads: any[]) {
+  if (!userId || userId === 'usr_guest_001' || userId === 'usr_guest') return;
   try {
-    localStorage.setItem(STORAGE_THREADS_KEY, JSON.stringify(threads));
+    localStorage.setItem(`aetherquant_threads_v3_${userId}`, JSON.stringify(threads));
   } catch {
     // Ignore storage quota errors
   }
 }
 
-function getCachedThreads(): any[] {
+function getCachedThreads(userId: string | undefined): any[] {
+  if (!userId || userId === 'usr_guest_001' || userId === 'usr_guest') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_THREADS_KEY);
+    const raw = localStorage.getItem(`aetherquant_threads_v3_${userId}`);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-function saveCachedMessages(threadId: string, msgs: any[]) {
+function saveCachedMessages(userId: string | undefined, threadId: string, msgs: any[]) {
+  if (!userId || userId === 'usr_guest_001' || userId === 'usr_guest' || !threadId) return;
   try {
-    localStorage.setItem(`${STORAGE_MSG_PREFIX}${threadId}`, JSON.stringify(msgs));
+    localStorage.setItem(`aetherquant_msgs_v3_${userId}_${threadId}`, JSON.stringify(msgs));
   } catch {
     // Ignore storage quota errors
   }
 }
 
-function getCachedMessages(threadId: string): any[] {
+function getCachedMessages(userId: string | undefined, threadId: string): any[] {
+  if (!userId || userId === 'usr_guest_001' || userId === 'usr_guest' || !threadId) return [];
   try {
-    const raw = localStorage.getItem(`${STORAGE_MSG_PREFIX}${threadId}`);
+    const raw = localStorage.getItem(`aetherquant_msgs_v3_${userId}_${threadId}`);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
@@ -259,7 +263,7 @@ const defaultPromptsFallback: PromptCard[] = [
 ];
 
 export const AIResearchView: React.FC = () => {
-  const { workspaceView, selectedStockSymbol, navigateToStockDetail, addFactorToLibrary, requireAuth } = useApp();
+  const { workspaceView, selectedStockSymbol, navigateToStockDetail, addFactorToLibrary, requireAuth, currentUser, isAuthenticated } = useApp();
 
   // Primary Tab: Chat vs Research Docs
   const [activeTab, setActiveTab] = useState<'chat' | 'docs'>(
@@ -343,11 +347,11 @@ export const AIResearchView: React.FC = () => {
     }
   }, [workspaceView]);
 
-  // Initial Load on Component Mount
+  // Initial Load and on User Auth Change
   useEffect(() => {
     loadThreadsFromDatabase();
     loadPromptsFromService(promptSeed);
-  }, []);
+  }, [isAuthenticated, currentUser?.id]);
 
   // Reload prompts when active symbol changes
   useEffect(() => {
@@ -355,8 +359,18 @@ export const AIResearchView: React.FC = () => {
   }, [selectedStockSymbol]);
 
   const loadThreadsFromDatabase = async () => {
-    // 1. Instant optimistic restore from local cache
-    const cachedThreads = getCachedThreads();
+    // If not authenticated or guest, default strictly to 0 chat records
+    if (!isAuthenticated || !currentUser?.id || currentUser.id === 'usr_guest_001' || currentUser.id === 'usr_guest') {
+      setThreadsList([]);
+      setCurrentThreadId('');
+      setMessages([]);
+      return;
+    }
+
+    const currentUserId = currentUser.id;
+
+    // 1. Instant optimistic restore from user-scoped local cache
+    const cachedThreads = getCachedThreads(currentUserId);
     const cleanedCached = cachedThreads.map((t) => {
       let cleanTitle = t.title || '新量化研究';
       if (cleanTitle.startsWith('0 ')) cleanTitle = cleanTitle.slice(2).trim();
@@ -365,10 +379,14 @@ export const AIResearchView: React.FC = () => {
 
     if (cleanedCached && cleanedCached.length > 0) {
       setThreadsList(cleanedCached);
-      if (!currentThreadId) {
+      if (!currentThreadId || !cleanedCached.some((t: any) => t.id === currentThreadId)) {
         const first = cleanedCached[0];
         selectThread(first.id, first.title);
       }
+    } else {
+      setThreadsList([]);
+      setCurrentThreadId('');
+      setMessages([]);
     }
 
     try {
@@ -380,19 +398,20 @@ export const AIResearchView: React.FC = () => {
           return { ...t, title: cleanTitle, pinned: Boolean(t.pinned) };
         });
         setThreadsList(normalized);
-        saveCachedThreads(normalized);
+        saveCachedThreads(currentUserId, normalized);
         const firstThread = normalized[0];
-        if (firstThread && (!currentThreadId || !cleanedCached.some((t: any) => t.id === currentThreadId))) {
+        if (firstThread && (!currentThreadId || !normalized.some((t: any) => t.id === currentThreadId))) {
           selectThread(firstThread.id, firstThread.title);
         }
-      } else if (!cleanedCached || cleanedCached.length === 0) {
-        createNewThread();
+      } else {
+        // User has 0 research records: default state is 0 records
+        setThreadsList([]);
+        setCurrentThreadId('');
+        setMessages([]);
+        saveCachedThreads(currentUserId, []);
       }
     } catch (err) {
-      console.warn('Failed to load threads from database, using cached/initial session:', err);
-      if (!cleanedCached || cleanedCached.length === 0) {
-        createNewThread();
-      }
+      console.warn('Failed to load threads from database:', err);
     }
   };
 
@@ -431,9 +450,10 @@ export const AIResearchView: React.FC = () => {
   // Load thread detail messages
   const selectThread = async (threadId: string, _threadTitle?: string) => {
     setCurrentThreadId(threadId);
+    const currentUserId = currentUser?.id;
 
-    // 1. Load from local cache first for zero flicker
-    const cachedMsgs = getCachedMessages(threadId);
+    // 1. Load from user-scoped local cache first for zero flicker
+    const cachedMsgs = getCachedMessages(currentUserId, threadId);
     if (cachedMsgs && cachedMsgs.length > 0) {
       setMessages(cachedMsgs);
     } else {
@@ -453,7 +473,7 @@ export const AIResearchView: React.FC = () => {
           timestamp: m.created_at ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '刚刚',
         }));
         setMessages(formattedMsgs);
-        saveCachedMessages(threadId, formattedMsgs);
+        saveCachedMessages(currentUserId, threadId, formattedMsgs);
 
         // Retroactively polish default titles from actual conversation content if needed
         const firstUser = formattedMsgs.find((m: any) => m.sender === 'user');
@@ -469,7 +489,7 @@ export const AIResearchView: React.FC = () => {
             const cleanTitle = extractHeuristicTitle(firstUser.content, currentT.active_symbol);
             setThreadsList((prev) => {
               const updated = prev.map((t) => (t.id === threadId ? { ...t, title: cleanTitle } : t));
-              saveCachedThreads(updated);
+              saveCachedThreads(currentUserId, updated);
               return updated;
             });
             ResearchService.updateThread(threadId, { title: cleanTitle }).catch(() => {});
@@ -482,6 +502,12 @@ export const AIResearchView: React.FC = () => {
   };
 
   const createNewThread = async () => {
+    if (!requireAuth(() => createNewThread())) {
+      return;
+    }
+
+    const currentUserId = currentUser?.id;
+
     // If the current active thread is already blank with 0 messages, just reuse it
     if (currentThreadId && messages.length === 0) {
       if (composerRef.current) composerRef.current.focus();
@@ -496,7 +522,7 @@ export const AIResearchView: React.FC = () => {
       const newId = created?.id || `thread_${Date.now()}`;
       setCurrentThreadId(newId);
       setMessages([]);
-      saveCachedMessages(newId, []);
+      saveCachedMessages(currentUserId, newId, []);
 
       const newThreadItem = {
         id: newId,
@@ -509,7 +535,7 @@ export const AIResearchView: React.FC = () => {
 
       setThreadsList((prev) => {
         const updated = [newThreadItem, ...prev.filter((t) => t.id !== newId)];
-        saveCachedThreads(updated);
+        saveCachedThreads(currentUserId, updated);
         return updated;
       });
       if (composerRef.current) composerRef.current.focus();
@@ -518,7 +544,7 @@ export const AIResearchView: React.FC = () => {
       const fallbackId = `thread_${Date.now()}`;
       setCurrentThreadId(fallbackId);
       setMessages([]);
-      saveCachedMessages(fallbackId, []);
+      saveCachedMessages(currentUserId, fallbackId, []);
     }
   };
 
@@ -537,6 +563,8 @@ export const AIResearchView: React.FC = () => {
     if (!requireAuth(() => handleSend(overrideText))) {
       return;
     }
+
+    const currentUserId = currentUser?.id;
 
     // Generate immediate clean heuristic title from user prompt
     const instantTitle = extractHeuristicTitle(query, selectedStockSymbol);
@@ -577,7 +605,7 @@ export const AIResearchView: React.FC = () => {
     setInputPrompt('');
     const newMessages = [...messages, userMsg, initialAssistantMsg];
     setMessages(newMessages);
-    saveCachedMessages(activeId, newMessages);
+    saveCachedMessages(currentUserId, activeId, newMessages);
     setLoading(true);
 
     // Optimistically update thread title in UI immediately
@@ -617,7 +645,7 @@ export const AIResearchView: React.FC = () => {
           ...prev,
         ];
       }
-      saveCachedThreads(updated);
+      saveCachedThreads(currentUserId, updated);
       return updated;
     });
 
@@ -664,7 +692,7 @@ export const AIResearchView: React.FC = () => {
           : msg
       );
       setMessages(finalMsgs);
-      saveCachedMessages(activeId, finalMsgs);
+      saveCachedMessages(currentUserId, activeId, finalMsgs);
 
       // Persist assistant message to backend database
       ResearchService.appendMessage(activeId, {
@@ -680,7 +708,7 @@ export const AIResearchView: React.FC = () => {
             const updated = prev.map((t) =>
               t.id === activeId ? { ...t, title: smartTitle } : t
             );
-            saveCachedThreads(updated);
+            saveCachedThreads(currentUserId, updated);
             return updated;
           });
           ResearchService.updateThread(activeId, { title: smartTitle }).catch(() => {});
@@ -704,7 +732,7 @@ export const AIResearchView: React.FC = () => {
               }
             : msg
         );
-        saveCachedMessages(activeId, updated);
+        saveCachedMessages(currentUserId, activeId, updated);
         return updated;
       });
     } finally {
@@ -714,28 +742,31 @@ export const AIResearchView: React.FC = () => {
 
   const handleTogglePinThread = async (e: React.MouseEvent, threadId: string, currentPinned: boolean) => {
     e.stopPropagation();
+    const currentUserId = currentUser?.id;
     const newPinned = !Boolean(currentPinned);
     await ResearchService.updateThread(threadId, { pinned: newPinned });
     setThreadsList((prev) => {
       const updated = prev
         .map((t) => (t.id === threadId ? { ...t, pinned: newPinned } : t))
         .sort((a, b) => (Boolean(a.pinned) === Boolean(b.pinned) ? 0 : a.pinned ? -1 : 1));
-      saveCachedThreads(updated);
+      saveCachedThreads(currentUserId, updated);
       return updated;
     });
   };
 
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
+    const currentUserId = currentUser?.id;
     await ResearchService.deleteThread(threadId);
     setThreadsList((prev) => {
       const updated = prev.filter((t) => t.id !== threadId);
-      saveCachedThreads(updated);
+      saveCachedThreads(currentUserId, updated);
       return updated;
     });
 
     if (currentThreadId === threadId) {
-      createNewThread();
+      setCurrentThreadId('');
+      setMessages([]);
     }
   };
 
@@ -753,6 +784,7 @@ export const AIResearchView: React.FC = () => {
   const handleSaveRenameThread = async (e: React.MouseEvent | React.FormEvent, threadId: string) => {
     e.stopPropagation();
     e.preventDefault();
+    const currentUserId = currentUser?.id;
     const trimmed = editingTitleText.trim();
     if (!trimmed) {
       setEditingThreadId(null);
@@ -760,7 +792,7 @@ export const AIResearchView: React.FC = () => {
     }
     setThreadsList((prev) => {
       const updated = prev.map((t) => (t.id === threadId ? { ...t, title: trimmed } : t));
-      saveCachedThreads(updated);
+      saveCachedThreads(currentUserId, updated);
       return updated;
     });
     setEditingThreadId(null);

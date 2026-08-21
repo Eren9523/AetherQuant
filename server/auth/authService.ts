@@ -96,12 +96,20 @@ export class D1AuthService {
       for (const u of initialUsers) {
         const passHash = hashPassword(u.password, DEFAULT_SALT);
 
-        // Insert or update users table in D1
-        await d1Client.executeQuery(
-          `INSERT OR REPLACE INTO users (id, username, email, name, role, department, account_type, avatar_url, status, created_at, updated_at, last_login)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [u.id, u.username, u.email, u.name, u.role, u.department, u.accountType, u.avatarUrl, 'offline', u.createdAt, now, null]
+        // Check if user already exists in D1
+        const existing = await d1Client.executeQuery<any>(
+          `SELECT id, avatar_url, name, email, department, account_type FROM users WHERE id = ? OR LOWER(username) = LOWER(?) LIMIT 1`,
+          [u.id, u.username]
         );
+
+        if (!existing.results || existing.results.length === 0) {
+          // Insert initial user record only if not exists
+          await d1Client.executeQuery(
+            `INSERT INTO users (id, username, email, name, role, department, account_type, avatar_url, status, created_at, updated_at, last_login)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [u.id, u.username, u.email, u.name, u.role, u.department, u.accountType, u.avatarUrl, 'offline', u.createdAt, now, null]
+          );
+        }
 
         // Insert or update credentials table in D1
         await d1Client.executeQuery(

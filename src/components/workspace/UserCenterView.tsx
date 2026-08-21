@@ -138,18 +138,24 @@ export const UserCenterView: React.FC = () => {
   const [threadSearch, setThreadSearch] = useState('');
 
   useEffect(() => {
+    if (!isAuthenticated || !currentUser?.id || currentUser.id === 'usr_guest_001' || currentUser.id === 'usr_guest') {
+      setCachedThreads([]);
+      return;
+    }
     try {
-      const raw = localStorage.getItem('aetherquant_research_threads_v3');
+      const raw = localStorage.getItem(`aetherquant_research_threads_v3_${currentUser.id}`);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           setCachedThreads(parsed);
+          return;
         }
       }
+      setCachedThreads([]);
     } catch {
-      // fallback
+      setCachedThreads([]);
     }
-  }, []);
+  }, [isAuthenticated, currentUser?.id]);
 
   // Handle custom avatar file upload (JPG, PNG, WebP)
   const handleAvatarFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {

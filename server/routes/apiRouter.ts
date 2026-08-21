@@ -18,11 +18,33 @@ import { PromptRecommendationService, DailyPromptGenerationJob } from '../ai/pro
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 export const apiRouter = Router();
 
-// Middleware to extract user context (defaulting to standard user)
+// Middleware to extract user context (defaulting to unauthenticated guest)
 const getUserContext = (req: Request) => {
+  const headerUserId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
+  const headerRole = (req.headers['x-user-role'] as string) || 'free';
+  const authHeader = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+
+  if (headerUserId && headerUserId !== 'usr_guest' && headerUserId !== 'usr_guest_001') {
+    return {
+      userId: headerUserId,
+      role: headerRole,
+      isAuthenticated: true,
+    };
+  }
+
+  // Token-based fallback identifier if provided
+  if (authHeader && authHeader.length > 10) {
+    return {
+      userId: headerUserId || 'usr_admin_001',
+      role: headerRole,
+      isAuthenticated: true,
+    };
+  }
+
   return {
-    userId: (req.headers['x-user-id'] as string) || 'usr_default_trader',
-    role: (req.headers['x-user-role'] as string) || 'free',
+    userId: 'usr_guest',
+    role: 'guest',
+    isAuthenticated: false,
   };
 };
 
@@ -281,9 +303,15 @@ apiRouter.post('/automation/jobs/:id/run', (req: Request, res: Response) => {
 // ==========================================
 
 const handleGetThreads = (req: Request, res: Response) => {
-  const { userId } = getUserContext(req);
+  const { userId, isAuthenticated } = getUserContext(req);
   const search = req.query.q as string;
   const limit = req.query.limit ? Number(req.query.limit) : 20;
+
+  // Unauthenticated guests default to 0 chat records
+  if (!isAuthenticated || userId === 'usr_guest' || userId === 'usr_guest_001') {
+    res.json({ count: 0, threads: [] });
+    return;
+  }
 
   const threads = ResearchHistoryService.getUserThreads({
     userId,

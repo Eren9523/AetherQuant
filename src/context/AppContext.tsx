@@ -75,12 +75,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Check auth session on boot
+  // Check auth session on boot & sync latest cloud profile
   useEffect(() => {
     const session = UserService.getCurrentSession();
     if (session) {
       setIsAuthenticated(true);
       setCurrentUser(UserService.getProfile());
+      UserService.fetchRemoteProfile().then((cloudProfile) => {
+        if (cloudProfile) {
+          setCurrentUser(cloudProfile);
+        }
+      });
     }
   }, []);
 

@@ -94,8 +94,30 @@ export class ApiClient {
     return new ApiError('HTTP_ERROR', `HTTP ${status}: ${defaultMsg}`, status);
   }
 
-  private static getAiHeaders(path: string): Record<string, string> {
+  private static getAuthHeaders(): Record<string, string> {
     const headers: Record<string, string> = {};
+    try {
+      const sessRaw = localStorage.getItem('aetherquant_d1_auth_session_v1');
+      if (sessRaw) {
+        const session = JSON.parse(sessRaw);
+        if (session && session.token) {
+          headers['Authorization'] = `Bearer ${session.token}`;
+        }
+        if (session && session.user && session.user.id) {
+          headers['x-user-id'] = session.user.id;
+          if (session.user.role) {
+            headers['x-user-role'] = session.user.role;
+          }
+        }
+      }
+    } catch {}
+    return headers;
+  }
+
+  private static getAiHeaders(path: string): Record<string, string> {
+    const headers: Record<string, string> = {
+      ...this.getAuthHeaders(),
+    };
     if (path.startsWith('/ai/') || path.startsWith('/research/')) {
       const cfg = getUserAiConfig();
       headers['x-api-channel-mode'] = cfg.channelMode;
@@ -183,6 +205,7 @@ export class ApiClient {
       method: 'DELETE',
       headers: {
         'Accept': 'application/json',
+        ...this.getAuthHeaders(),
       },
       credentials: 'include',
     });
