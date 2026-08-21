@@ -37,7 +37,7 @@ const inMemoryUsers: Map<string, WorkerQuantUser> = new Map([
       role: 'admin',
       department: '量化系统管理部',
       accountType: 'System Administrator',
-      avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=QuantLead&backgroundColor=f8fafc',
+      avatarUrl: 'https://api.dicebear.com/7.x/open-peeps/svg?seed=QuantLead&backgroundColor=f8fafc',
       status: 'active',
       createdAt: '2024-03-15',
       lastLogin: new Date().toISOString(),
@@ -127,7 +127,7 @@ export class WorkerAuthService {
           'admin',
           '量化系统管理部',
           'System Administrator',
-          'https://api.dicebear.com/7.x/bottts/svg?seed=QuantLead&backgroundColor=f8fafc',
+          'https://api.dicebear.com/7.x/open-peeps/svg?seed=QuantLead&backgroundColor=f8fafc',
           'active',
           '2024-03-15',
           now,
@@ -220,7 +220,7 @@ export class WorkerAuthService {
               accountType: userRow?.account_type || 'Quantitative Pro',
               avatarUrl:
                 userRow?.avatar_url ||
-                `https://api.dicebear.com/7.x/bottts/svg?seed=${cred.username}&backgroundColor=f8fafc`,
+                `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(cred.username)}&backgroundColor=f8fafc`,
               status: userRow?.status || 'active',
               createdAt: userRow?.created_at || now,
               lastLogin: now,
@@ -311,7 +311,7 @@ export class WorkerAuthService {
     const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
     const passHash = await hashPassword(password, DEFAULT_SALT);
     const now = new Date().toISOString();
-    const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(username)}&backgroundColor=f1f5f9`;
+    const avatarUrl = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(username)}&backgroundColor=f8fafc`;
 
     const userProfile: WorkerQuantUser = {
       id: userId,
@@ -390,6 +390,111 @@ export class WorkerAuthService {
     });
 
     return { success: true, user: userProfile, token };
+  }
+
+  public static async updateUserAvatar(
+    db: D1Database | undefined,
+    userIdOrUsername: string,
+    avatarUrl: string
+  ): Promise<{ success: boolean; avatarUrl: string; error?: string }> {
+    if (!userIdOrUsername || !avatarUrl) {
+      return { success: false, avatarUrl: '', error: '缺少用户标识或头像数据' };
+    }
+
+    const now = new Date().toISOString();
+
+    if (db) {
+      await this.initD1(db);
+      try {
+        await db
+          .prepare(`UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ? OR LOWER(username) = LOWER(?)`)
+          .bind(avatarUrl, now, userIdOrUsername, userIdOrUsername)
+          .run();
+      } catch (err: any) {
+        console.warn('[WorkerAuth] D1 avatar update failed:', err);
+      }
+    }
+
+    // Also update in-memory
+    for (const [key, user] of inMemoryUsers.entries()) {
+      if (user.id === userIdOrUsername || user.username.toLowerCase() === userIdOrUsername.toLowerCase()) {
+        user.avatarUrl = avatarUrl;
+        inMemoryUsers.set(key, user);
+      }
+    }
+
+    return { success: true, avatarUrl };
+  }
+
+  public static async updateUserProfile(
+    db: D1Database | undefined,
+    userIdOrUsername: string,
+    profileData: Partial<WorkerQuantUser>
+  ): Promise<{ success: boolean; user?: WorkerQuantUser; error?: string }> {
+    if (!userIdOrUsername) {
+      return { success: false, error: '缺少用户标识' };
+    }
+
+    const now = new Date().toISOString();
+
+    if (db) {
+      await this.initD1(db);
+      try {
+        const currentUser = await db
+          .prepare(`SELECT * FROM users WHERE id = ? OR LOWER(username) = LOWER(?)`)
+          .bind(userIdOrUsername, userIdOrUsername)
+          .first<any>();
+
+        if (currentUser) {
+          const newName = profileData.name !== undefined ? profileData.name : currentUser.name;
+          const newEmail = profileData.email !== undefined ? profileData.email : currentUser.email;
+          const newDept = profileData.department !== undefined ? profileData.department : currentUser.department;
+          const newAccountType = profileData.accountType !== undefined ? profileData.accountType : currentUser.account_type;
+          const newAvatar = profileData.avatarUrl !== undefined ? profileData.avatarUrl : currentUser.avatar_url;
+
+          await db
+            .prepare(
+              `UPDATE users SET name = ?, email = ?, department = ?, account_type = ?, avatar_url = ?, updated_at = ?
+               WHERE id = ?`
+            )
+            .bind(newName, newEmail, newDept, newAccountType, newAvatar, now, currentUser.id)
+            .run();
+
+          const updatedProfile: WorkerQuantUser = {
+            id: currentUser.id,
+            username: currentUser.username,
+            name: newName,
+            email: newEmail,
+            role: currentUser.role,
+            department: newDept,
+            accountType: newAccountType,
+            avatarUrl: newAvatar,
+            status: currentUser.status,
+            createdAt: currentUser.created_at,
+            lastLogin: currentUser.last_login || now,
+          };
+
+          return { success: true, user: updatedProfile };
+        }
+      } catch (err: any) {
+        console.warn('[WorkerAuth] D1 profile update failed:', err);
+      }
+    }
+
+    // In-memory fallback
+    for (const [key, user] of inMemoryUsers.entries()) {
+      if (user.id === userIdOrUsername || user.username.toLowerCase() === userIdOrUsername.toLowerCase()) {
+        const updated: WorkerQuantUser = {
+          ...user,
+          ...profileData,
+          avatarUrl: profileData.avatarUrl || user.avatarUrl,
+        };
+        inMemoryUsers.set(key, updated);
+        return { success: true, user: updated };
+      }
+    }
+
+    return { success: false, error: '未找到对应用户记录' };
   }
 
   public static async verifySession(

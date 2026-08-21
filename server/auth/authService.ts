@@ -88,7 +88,7 @@ export class D1AuthService {
           role: 'admin',
           department: '量化系统管理部',
           accountType: 'System Administrator',
-          avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=QuantLead&backgroundColor=f8fafc',
+          avatarUrl: 'https://api.dicebear.com/7.x/open-peeps/svg?seed=QuantLead&backgroundColor=f8fafc',
           createdAt: '2024-03-15',
         },
       ];
@@ -100,7 +100,7 @@ export class D1AuthService {
         await d1Client.executeQuery(
           `INSERT OR REPLACE INTO users (id, username, email, name, role, department, account_type, avatar_url, status, created_at, updated_at, last_login)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [u.id, u.username, u.email, u.name, u.role, u.department, u.accountType, u.avatarUrl, 'active', u.createdAt, now, now]
+          [u.id, u.username, u.email, u.name, u.role, u.department, u.accountType, u.avatarUrl, 'offline', u.createdAt, now, null]
         );
 
         // Insert or update credentials table in D1
@@ -199,7 +199,7 @@ export class D1AuthService {
         role: u?.role || credRecord.role || 'free',
         department: u?.department || '量化投研中心',
         accountType: u?.account_type || 'Quantitative Pro',
-        avatarUrl: u?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${credRecord.username}&backgroundColor=f8fafc`,
+        avatarUrl: u?.avatar_url || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(credRecord.username)}&backgroundColor=f8fafc`,
         status: u?.status || 'active',
         createdAt: u?.created_at || now,
         lastLogin: now,
@@ -288,7 +288,7 @@ export class D1AuthService {
     const userId = `usr_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const passHash = hashPassword(password, DEFAULT_SALT);
     const now = new Date().toISOString();
-    const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(username)}&backgroundColor=f1f5f9`;
+    const avatarUrl = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(username)}&backgroundColor=f8fafc`;
 
     // 1. Insert into users table
     await d1Client.executeQuery(
@@ -333,6 +333,79 @@ export class D1AuthService {
       user: quantUser,
       token,
     };
+  }
+
+  /**
+   * Update user avatar in D1
+   */
+  public static async updateUserAvatar(userIdOrUsername: string, avatarUrl: string): Promise<{ success: boolean; avatarUrl: string; error?: string }> {
+    await this.initD1AdminCredentials();
+    if (!userIdOrUsername || !avatarUrl) {
+      return { success: false, avatarUrl: '', error: '缺少用户标识或头像数据' };
+    }
+
+    try {
+      const now = new Date().toISOString();
+      await d1Client.executeQuery(
+        `UPDATE users SET avatar_url = ?, updated_at = ? WHERE id = ? OR LOWER(username) = LOWER(?)`,
+        [avatarUrl, now, userIdOrUsername, userIdOrUsername]
+      );
+      return { success: true, avatarUrl };
+    } catch (err: any) {
+      return { success: false, avatarUrl, error: err.message || '更新头像失败' };
+    }
+  }
+
+  /**
+   * Update user profile in D1
+   */
+  public static async updateUserProfile(userIdOrUsername: string, profileData: Partial<QuantUser>): Promise<{ success: boolean; user?: QuantUser; error?: string }> {
+    await this.initD1AdminCredentials();
+    if (!userIdOrUsername) {
+      return { success: false, error: '缺少用户标识' };
+    }
+
+    try {
+      const now = new Date().toISOString();
+      const existing = await d1Client.executeQuery<any>(
+        `SELECT * FROM users WHERE id = ? OR LOWER(username) = LOWER(?)`,
+        [userIdOrUsername, userIdOrUsername]
+      );
+
+      if (existing.results && existing.results.length > 0) {
+        const u = existing.results[0];
+        const newName = profileData.name !== undefined ? profileData.name : u.name;
+        const newEmail = profileData.email !== undefined ? profileData.email : u.email;
+        const newDept = profileData.department !== undefined ? profileData.department : u.department;
+        const newAccountType = profileData.accountType !== undefined ? profileData.accountType : u.account_type;
+        const newAvatar = profileData.avatarUrl !== undefined ? profileData.avatarUrl : u.avatar_url;
+
+        await d1Client.executeQuery(
+          `UPDATE users SET name = ?, email = ?, department = ?, account_type = ?, avatar_url = ?, updated_at = ? WHERE id = ?`,
+          [newName, newEmail, newDept, newAccountType, newAvatar, now, u.id]
+        );
+
+        return {
+          success: true,
+          user: {
+            id: u.id,
+            username: u.username,
+            name: newName,
+            email: newEmail,
+            role: u.role,
+            department: newDept,
+            accountType: newAccountType,
+            avatarUrl: newAvatar,
+            status: u.status,
+            createdAt: u.created_at,
+            lastLogin: u.last_login || now,
+          },
+        };
+      }
+      return { success: false, error: '未找到用户记录' };
+    } catch (err: any) {
+      return { success: false, error: err.message || '更新个人资料失败' };
+    }
   }
 
   /**
@@ -412,10 +485,10 @@ export class D1AuthService {
         role: u.role,
         department: u.department || '量化投研中心',
         accountType: u.account_type || 'Standard',
-        avatarUrl: u.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}&backgroundColor=f8fafc`,
-        status: u.status || 'active',
+        avatarUrl: u.avatar_url || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(u.username)}&backgroundColor=f8fafc`,
+        status: u.status || 'offline',
         createdAt: u.created_at || '2024-03-15',
-        lastLogin: u.last_login || '刚刚',
+        lastLogin: u.last_login ? new Date(u.last_login).toLocaleString() : '未登录',
       }));
     }
     return [];

@@ -43,8 +43,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }, [isOpen, initialMode]);
 
   // 登录表单字段（支持输入用户名或邮箱）
-  const [accountInput, setAccountInput] = useState('admin');
-  const [password, setPassword] = useState('penguin778');
+  const [accountInput, setAccountInput] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // 注册表单字段（支持自定义用户名、邮箱、密码、确认密码）
@@ -155,12 +155,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const fillAdmin = () => {
-    setAccountInput('admin');
-    setPassword('penguin778');
-    setErrorMessage('');
   };
 
   return (
@@ -436,14 +430,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </button>
               </div>
 
-              <div className="flex items-center justify-between text-[11px] text-neutral-400 px-1 pt-1">
-                <button
-                  type="button"
-                  onClick={fillAdmin}
-                  className="text-neutral-500 hover:text-blue-600 transition-colors cursor-pointer"
-                >
-                  {t.auth.fillAdminBtn}
-                </button>
+              <div className="flex items-center justify-end text-[11px] text-neutral-400 px-1 pt-1">
                 <span className="text-neutral-400">{t.auth.d1EncryptedBadge}</span>
               </div>
 

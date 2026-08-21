@@ -53,9 +53,12 @@ export const LandingHeader: React.FC = () => {
                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 transition-all text-neutral-800 text-xs font-medium"
               >
                 <img
-                  src={currentUser.avatar}
+                  src={currentUser.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`}
                   alt={currentUser.name}
-                  className="w-5 h-5 rounded-full border border-neutral-300"
+                  className="w-5 h-5 rounded-full border border-neutral-300 object-cover"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                  }}
                 />
                 <span className="max-w-[80px] truncate">{currentUser.name}</span>
                 <span className="text-[10px] font-mono px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 font-semibold">
@@ -82,20 +85,12 @@ export const LandingHeader: React.FC = () => {
           ) : (
             <div className="flex items-center gap-2">
               <button
-                id="landing-login-btn"
+                id="landing-auth-btn"
                 onClick={() => openAuthModal('login')}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded-xl bg-white hover:bg-neutral-50 transition-all shadow-xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded-xl bg-white hover:bg-neutral-50 transition-all shadow-xs cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5 text-emerald-600" />
-                <span>登录</span>
-              </button>
-              <button
-                id="landing-register-btn"
-                onClick={() => openAuthModal('register')}
-                className="hidden sm:flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:text-neutral-900 border border-neutral-200 hover:border-neutral-300 rounded-xl bg-white hover:bg-neutral-50 transition-all shadow-xs"
-              >
-                <UserPlus className="w-3.5 h-3.5 text-cyan-600" />
-                <span>注册</span>
+                <span>登录 / 注册</span>
               </button>
               <button
                 id="landing-enter-workspace-direct-btn"

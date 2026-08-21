@@ -722,6 +722,82 @@ apiRouter.get('/auth/users', async (req: Request, res: Response) => {
   res.json({ success: true, count: users.length, users });
 });
 
+apiRouter.post('/auth/avatar', async (req: Request, res: Response) => {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || (req.body && req.body.token);
+  const { avatar, avatarUrl, username, userId } = req.body || {};
+  const targetAvatar = avatarUrl || avatar;
+
+  if (!targetAvatar) {
+    res.status(400).json({ success: false, error: '请提供有效的头像数据或URL' });
+    return;
+  }
+
+  const { D1AuthService } = await import('../auth/authService');
+  let targetIdentifier = userId || username;
+  if (!targetIdentifier && token) {
+    const sess = await D1AuthService.verifySession(token);
+    if (sess.success && sess.user) {
+      targetIdentifier = sess.user.id;
+    }
+  }
+
+  if (!targetIdentifier) {
+    targetIdentifier = 'admin';
+  }
+
+  const result = await D1AuthService.updateUserAvatar(targetIdentifier, targetAvatar);
+  if (!result.success) {
+    res.status(500).json({ success: false, error: result.error || '更新头像失败' });
+    return;
+  }
+
+  res.json({
+    success: true,
+    avatarUrl: targetAvatar,
+    data: { avatarUrl: targetAvatar },
+    d1Verified: true,
+    storage: 'Cloudflare D1 users.avatar_url',
+  });
+});
+
+apiRouter.post('/auth/profile', async (req: Request, res: Response) => {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || (req.body && req.body.token);
+  const { id, username, userId, name, email, department, accountType, avatar, avatarUrl } = req.body || {};
+
+  const { D1AuthService } = await import('../auth/authService');
+  let targetIdentifier = id || username || userId;
+  if (!targetIdentifier && token) {
+    const sess = await D1AuthService.verifySession(token);
+    if (sess.success && sess.user) {
+      targetIdentifier = sess.user.id;
+    }
+  }
+
+  if (!targetIdentifier) {
+    targetIdentifier = 'admin';
+  }
+
+  const result = await D1AuthService.updateUserProfile(targetIdentifier, {
+    name,
+    email,
+    department,
+    accountType,
+    avatarUrl: avatar || avatarUrl,
+  });
+
+  if (!result.success) {
+    res.status(400).json({ success: false, error: result.error || '更新个人资料失败' });
+    return;
+  }
+
+  res.json({
+    success: true,
+    user: result.user,
+    data: result.user,
+    d1Verified: true,
+  });
+});
+
 apiRouter.get('/auth/d1-status', async (req: Request, res: Response) => {
   const { D1AuthService } = await import('../auth/authService');
   await D1AuthService.initD1AdminCredentials();

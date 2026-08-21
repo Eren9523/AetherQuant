@@ -147,9 +147,12 @@ export const WorkspaceHeader: React.FC = () => {
               </span>
               <div className="w-8 h-8 rounded-full bg-neutral-100 border border-neutral-200 shadow-2xs overflow-hidden flex items-center justify-center">
                 <img
-                  src={currentUser.avatar}
+                  src={currentUser.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`}
                   alt={currentUser.name}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                  }}
                 />
               </div>
               <ChevronDown className="w-3 h-3 text-neutral-400" />
@@ -168,7 +171,14 @@ export const WorkspaceHeader: React.FC = () => {
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-white border border-neutral-200 p-0.5 overflow-hidden shrink-0 shadow-2xs">
-                      <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover rounded-lg" />
+                      <img
+                        src={currentUser.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`}
+                        alt={currentUser.name}
+                        className="w-full h-full object-cover rounded-lg"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                        }}
+                      />
                     </div>
                     <div className="min-w-0">
                       <div className="font-bold text-xs text-neutral-900 truncate">

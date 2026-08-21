@@ -429,6 +429,133 @@ const handleAuthUsers = async (c: any) => {
 app.get('/api/v1/auth/users', handleAuthUsers);
 app.get('/api/auth/users', handleAuthUsers);
 
+// Update Avatar Endpoint (stores in D1 cloud database)
+const handleAuthAvatar = async (c: any) => {
+  const reqId = c.get('requestId');
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const token = (c.req.header('authorization') || '').replace(/^Bearer\s+/i, '');
+    const { avatar, avatarUrl, username, userId } = body;
+    const targetAvatar = avatarUrl || avatar;
+
+    if (!targetAvatar) {
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INVALID_AVATAR', message: '请提供有效的头像数据或URL' },
+          request_id: reqId,
+        },
+        400
+      );
+    }
+
+    let targetIdentifier = userId || username;
+    if (!targetIdentifier && token) {
+      const sessResult = await WorkerAuthService.verifySession(c.env.DB, token);
+      if (sessResult.success && sessResult.user) {
+        targetIdentifier = sessResult.user.id;
+      }
+    }
+
+    if (!targetIdentifier) {
+      targetIdentifier = 'admin';
+    }
+
+    const result = await WorkerAuthService.updateUserAvatar(c.env.DB, targetIdentifier, targetAvatar);
+    if (!result.success) {
+      return c.json(
+        {
+          success: false,
+          error: { code: 'AVATAR_UPDATE_FAILED', message: result.error || '更新头像至云端失败' },
+          request_id: reqId,
+        },
+        500
+      );
+    }
+
+    return c.json({
+      success: true,
+      avatarUrl: targetAvatar,
+      data: { avatarUrl: targetAvatar },
+      d1Verified: true,
+      storage: 'Cloudflare D1 users.avatar_url',
+      request_id: reqId,
+    });
+  } catch (err: any) {
+    return c.json(
+      {
+        success: false,
+        error: { code: 'SERVER_ERROR', message: err.message || '更新头像处理失败' },
+        request_id: reqId,
+      },
+      500
+    );
+  }
+};
+
+app.post('/api/v1/auth/avatar', handleAuthAvatar);
+app.post('/api/auth/avatar', handleAuthAvatar);
+
+// Update Profile Endpoint
+const handleAuthProfile = async (c: any) => {
+  const reqId = c.get('requestId');
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const token = (c.req.header('authorization') || '').replace(/^Bearer\s+/i, '');
+    let targetIdentifier = body.id || body.username || body.userId;
+
+    if (!targetIdentifier && token) {
+      const sessResult = await WorkerAuthService.verifySession(c.env.DB, token);
+      if (sessResult.success && sessResult.user) {
+        targetIdentifier = sessResult.user.id;
+      }
+    }
+
+    if (!targetIdentifier) {
+      targetIdentifier = 'admin';
+    }
+
+    const result = await WorkerAuthService.updateUserProfile(c.env.DB, targetIdentifier, {
+      name: body.name,
+      email: body.email,
+      department: body.department,
+      accountType: body.accountType,
+      avatarUrl: body.avatar || body.avatarUrl,
+    });
+
+    if (!result.success) {
+      return c.json(
+        {
+          success: false,
+          error: { code: 'PROFILE_UPDATE_FAILED', message: result.error || '更新资料失败' },
+          request_id: reqId,
+        },
+        400
+      );
+    }
+
+    return c.json({
+      success: true,
+      user: result.user,
+      data: result.user,
+      d1Verified: true,
+      request_id: reqId,
+    });
+  } catch (err: any) {
+    return c.json(
+      {
+        success: false,
+        error: { code: 'SERVER_ERROR', message: err.message || '更新个人资料失败' },
+        request_id: reqId,
+      },
+      500
+    );
+  }
+};
+
+app.post('/api/v1/auth/profile', handleAuthProfile);
+app.post('/api/auth/profile', handleAuthProfile);
+
 // D1 Status Endpoint
 const handleAuthD1Status = async (c: any) => {
   await WorkerAuthService.initD1(c.env.DB);

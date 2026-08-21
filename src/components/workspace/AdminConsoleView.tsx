@@ -29,12 +29,16 @@ import { cn } from '../../utils/cn';
 import { formatErrorMessage } from '../../utils/formatters';
 
 export const AdminConsoleView: React.FC = () => {
-  const { setWorkspaceView, marketColorMode } = useApp();
+  const { setWorkspaceView, marketColorMode, login, isAuthenticated } = useApp();
   const [isAdmin, setIsAdmin] = useState(() => UserService.isAdmin());
   const [authPassword, setAuthPassword] = useState('');
-  const [authUsername, setAuthUsername] = useState('admin');
+  const [authUsername, setAuthUsername] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    setIsAdmin(UserService.isAdmin());
+  }, [isAuthenticated]);
 
   // Tabs in Admin Console
   const [activeTab, setActiveTab] = useState<'risk' | 'users' | 'd1-database' | 'gateway' | 'audit'>('risk');
@@ -105,9 +109,9 @@ export const AdminConsoleView: React.FC = () => {
       roleLabel: '超级管理员 (Admin)',
       department: '量化系统管理部',
       email: 'admin@aetherquant.io',
-      status: 'active',
+      status: 'offline',
       authMethod: 'D1 加密哈希',
-      lastLogin: '刚刚',
+      lastLogin: '未登录',
     },
   ]);
 
@@ -126,9 +130,9 @@ export const AdminConsoleView: React.FC = () => {
             roleLabel: u.role === 'admin' ? '超级管理员 (Admin)' : u.role === 'quant_lead' ? '量化总监' : u.role === 'researcher' ? '投研分析师' : '实盘交易员',
             department: u.department,
             email: u.email,
-            status: u.status || 'active',
+            status: u.status || 'offline',
             authMethod: 'D1 加密哈希',
-            lastLogin: u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : '活跃',
+            lastLogin: u.lastLogin || '未登录',
           }))
         );
       }
@@ -184,12 +188,15 @@ export const AdminConsoleView: React.FC = () => {
     setAuthLoading(true);
     setAuthError(null);
 
-    const res = await UserService.loginWithD1(authUsername, authPassword);
+    const res = await login(authUsername, authPassword);
     setAuthLoading(false);
 
-    if (res.success && res.user?.role === 'admin') {
+    if (res.success && UserService.isAdmin()) {
       setIsAdmin(true);
       setAuthPassword('');
+      fetchD1Users();
+    } else if (res.success && !UserService.isAdmin()) {
+      setAuthError('当前登录账号非管理员角色，无权访问后台管理控制台');
     } else {
       setAuthError(formatErrorMessage(res.error, '用户名或密码错误，仅管理员账户拥有后台管理权限'));
     }
@@ -217,6 +224,7 @@ export const AdminConsoleView: React.FC = () => {
               <input
                 type="text"
                 required
+                placeholder="请输入管理员用户名"
                 value={authUsername}
                 onChange={(e) => setAuthUsername(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-neutral-50 border border-neutral-200 rounded-2xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"

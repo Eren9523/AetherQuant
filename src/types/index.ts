@@ -155,9 +155,9 @@ export interface UserProfile {
   department: string;
   email: string;
   phone?: string;
-  role: 'admin' | 'quant_lead' | 'researcher' | 'trader';
+  role: 'admin' | 'quant_lead' | 'researcher' | 'trader' | 'free' | 'pro';
   status: 'active' | 'offline' | 'busy';
-  accountType: 'Institutional Pro' | 'Fund Lead' | 'VIP Trader';
+  accountType: 'Institutional Pro' | 'Fund Lead' | 'VIP Trader' | 'Community Explorer' | string;
   bio?: string;
   lastLogin: string;
   joinDate: string;

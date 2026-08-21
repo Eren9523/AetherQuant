@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   UserProfile,
@@ -44,6 +44,13 @@ import {
   SlidersHorizontal,
   Terminal,
   Activity,
+  Upload,
+  Camera,
+  Image as ImageIcon,
+  Trash2,
+  Cloud,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { formatErrorMessage } from '../../utils/formatters';
@@ -57,13 +64,36 @@ export const UserCenterView: React.FC = () => {
     setSelectedBacktestId,
     userCenterSubTab,
     setUserCenterSubTab,
+    currentUser,
+    isAuthenticated,
+    openAuthModal,
+    requireAuth,
+    login,
+    logout,
+    updateUserAvatar,
+    updateUserProfile,
   } = useApp();
 
-  const [profile, setProfile] = useState<UserProfile>(() => UserService.getProfile());
+  const [profile, setProfile] = useState<UserProfile>(() => currentUser || UserService.getProfile());
   const [preferences, setPreferences] = useState<QuantUserPreferences>(() => UserService.getPreferences());
   const [apiConfig, setApiConfig] = useState<UserApiKeysConfig>(() => UserService.getApiKeysConfig());
 
   const [activeSubTab, setActiveSubTab] = useState<'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security'>(() => userCenterSubTab || 'overview');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarUploadMsg, setAvatarUploadMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentUser) {
+      setProfile(currentUser);
+      setEditForm(currentUser);
+    } else {
+      const guestProfile = UserService.getProfile();
+      setProfile(guestProfile);
+      setEditForm(guestProfile);
+    }
+  }, [currentUser, isAuthenticated]);
 
   useEffect(() => {
     if (userCenterSubTab) {
@@ -97,7 +127,7 @@ export const UserCenterView: React.FC = () => {
 
   // D1 Admin Login Modal
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
-  const [adminUsername, setAdminUsername] = useState('admin');
+  const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminAuthLoading, setAdminAuthLoading] = useState(false);
   const [adminAuthError, setAdminAuthError] = useState<string | null>(null);
@@ -121,8 +151,68 @@ export const UserCenterView: React.FC = () => {
     }
   }, []);
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  // Handle custom avatar file upload (JPG, PNG, WebP)
+  const handleAvatarFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    if (!isAuthenticated) {
+      openAuthModal('login');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    try {
+      setIsUploadingAvatar(true);
+      setProfileFormError(null);
+      setAvatarUploadMsg('正在处理并压缩图片...');
+
+      const compressedDataUrl = await UserService.compressImageFile(file, 256, 256, 0.88);
+      
+      // Update form state if modal is open
+      setEditForm((prev) => ({ ...prev, avatar: compressedDataUrl }));
+
+      // Immediately sync with Cloudflare D1
+      setAvatarUploadMsg('正在同步至 Cloudflare D1 边缘数据库...');
+      const res = await updateUserAvatar(compressedDataUrl);
+      setProfile(res.user);
+      setProfileSavedToast(true);
+      setAvatarUploadMsg('头像已成功同步到云端数据库！');
+      setTimeout(() => {
+        setProfileSavedToast(false);
+        setAvatarUploadMsg(null);
+      }, 3000);
+    } catch (err: any) {
+      setProfileFormError(formatErrorMessage(err, '上传头像失败，请重试'));
+      setAvatarUploadMsg(null);
+    } finally {
+      setIsUploadingAvatar(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Direct selection of an Open Peeps preset
+  const handleSelectPresetAvatar = async (presetUrl: string) => {
+    if (!isAuthenticated) {
+      openAuthModal('login');
+      return;
+    }
+    setEditForm((prev) => ({ ...prev, avatar: presetUrl }));
+    const res = await updateUserAvatar(presetUrl);
+    setProfile(res.user);
+    setProfileSavedToast(true);
+    setTimeout(() => setProfileSavedToast(false), 2500);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAuthenticated) {
+      openAuthModal('login');
+      return;
+    }
     setProfileFormError(null);
 
     const nickname = (editForm.name || '').trim();
@@ -140,15 +230,16 @@ export const UserCenterView: React.FC = () => {
       return;
     }
 
-    // 用户名保持注册初始值不可更改
-    const updated = UserService.updateProfile({
+    // 用户名保持注册初始值不可更改，同步更新至 Cloudflare D1
+    const res = await updateUserProfile({
       ...editForm,
       name: nickname,
       email: email,
-      username: profile.username || editForm.username || 'admin',
+      avatar: editForm.avatar,
+      username: profile.username || editForm.username || 'user',
     });
 
-    setProfile(updated);
+    setProfile(res.user);
     setIsEditModalOpen(false);
     setProfileSavedToast(true);
     setTimeout(() => setProfileSavedToast(false), 2500);
@@ -208,11 +299,10 @@ export const UserCenterView: React.FC = () => {
     setAdminAuthLoading(true);
     setAdminAuthError(null);
 
-    const result = await UserService.loginWithD1(adminUsername, adminPassword);
+    const result = await login(adminUsername, adminPassword);
     setAdminAuthLoading(false);
 
-    if (result.success && result.user) {
-      setProfile(result.user);
+    if (result.success) {
       setAdminAuthSuccess(true);
       setTimeout(() => {
         setIsAdminLoginOpen(false);
@@ -299,25 +389,62 @@ export const UserCenterView: React.FC = () => {
         <div className="absolute -bottom-24 -left-24 w-80 h-80 bg-indigo-400/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          {/* Hidden File Input for Avatar Upload */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleAvatarFileSelected}
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            aria-label="上传头像文件"
+          />
+
           {/* Avatar & Main Info */}
           <div className="flex items-start sm:items-center gap-5">
-            {/* Avatar with Status Ring */}
-            <div className="relative shrink-0">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white border-2 border-neutral-100 shadow-md p-1 overflow-hidden">
+            {/* Avatar with Status Ring & Hover Upload Action */}
+            <div className="relative shrink-0 group">
+              <div
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    openAuthModal('login');
+                  } else {
+                    fileInputRef.current?.click();
+                  }
+                }}
+                title={isAuthenticated ? "点击直接上传更换个人头像 (支持 JPG/PNG/WebP，云端 D1 数据库持久化)" : "点击登录账号以更换个人专属头像"}
+                className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-white border-2 border-neutral-100 shadow-md p-1 overflow-hidden cursor-pointer relative transition-transform group-hover:scale-102"
+              >
                 <img
-                  src={profile.avatar}
+                  src={profile.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(profile.username || 'QuantUser')}&backgroundColor=f8fafc`}
                   alt={profile.name}
                   className="w-full h-full object-cover rounded-2xl"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(profile.username || 'QuantUser')}&backgroundColor=f8fafc`;
+                  }}
                 />
+                {/* Upload Overlay */}
+                <div className="absolute inset-0 bg-black/40 rounded-2xl flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-medium backdrop-blur-2xs">
+                  {isAuthenticated ? (
+                    <>
+                      <Camera className="w-5 h-5 mb-0.5" />
+                      <span>更换头像</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogIn className="w-5 h-5 mb-0.5" />
+                      <span>登录账号</span>
+                    </>
+                  )}
+                </div>
               </div>
               <span
                 className={cn(
-                  'absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[10px] text-white',
-                  profile.status === 'active' ? 'bg-emerald-500' : 'bg-neutral-400'
+                  'absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[10px] text-white shadow-2xs font-bold',
+                  isAuthenticated ? 'bg-emerald-500' : 'bg-neutral-400'
                 )}
-                title="网关就绪"
+                title={isAuthenticated ? "D1 数据库验证已在线" : "未登录 (访客离线模式)"}
               >
-                ✓
+                {isAuthenticated ? '✓' : '•'}
               </span>
             </div>
 
@@ -329,15 +456,36 @@ export const UserCenterView: React.FC = () => {
                 </h2>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-neutral-100 text-neutral-700 border border-neutral-200 shadow-2xs">
                   <Lock className="w-3 h-3 text-neutral-400" />
-                  <span>@{profile.username || 'admin'}</span>
-                  <span className="text-[10px] text-neutral-400 font-sans font-normal">(不可更改)</span>
+                  <span>@{profile.username || (isAuthenticated ? 'user' : 'guest')}</span>
+                  <span className="text-[10px] text-neutral-400 font-sans font-normal">
+                    {isAuthenticated ? '(不可更改)' : '(访客模式)'}
+                  </span>
                 </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide bg-blue-600 text-white shadow-2xs">
-                  {profile.role === 'admin' ? '系统管理员' : '高级量化分析师'}
-                </span>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200">
-                  D1 加密鉴权
-                </span>
+                
+                {isAuthenticated ? (
+                  <span className={cn(
+                    "px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide text-white shadow-2xs",
+                    profile.role === 'admin' ? "bg-purple-600" : profile.role === 'quant_lead' ? "bg-blue-600" : "bg-emerald-600"
+                  )}>
+                    {profile.role === 'admin' ? '系统管理员 (Admin)' : profile.role === 'quant_lead' ? 'CTA量化策略主管' : '高级量化分析师'}
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-neutral-200 text-neutral-700">
+                    未登录访客
+                  </span>
+                )}
+
+                {isAuthenticated ? (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                    <Cloud className="w-3 h-3" />
+                    <span>D1 云端已同步</span>
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    <span>访客只读模式 · 登录后同步云端</span>
+                  </span>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-600 font-medium">
@@ -352,35 +500,81 @@ export const UserCenterView: React.FC = () => {
               <p className="text-xs text-neutral-500 line-clamp-1 max-w-xl">
                 {profile.bio}
               </p>
+
+              {avatarUploadMsg && (
+                <div className="text-[11px] text-blue-600 font-medium animate-pulse flex items-center gap-1.5 mt-1">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <span>{avatarUploadMsg}</span>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Quick Actions */}
           <div className="flex flex-wrap items-center gap-2.5 self-start md:self-center shrink-0">
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-semibold border border-neutral-200/80 shadow-2xs transition-all cursor-pointer"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-neutral-500" />
-              <span>编辑资料</span>
-            </button>
+            {!isAuthenticated ? (
+              <>
+                <button
+                  onClick={() => openAuthModal('login')}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>登录 / 注册账号</span>
+                </button>
 
-            {profile.role === 'admin' ? (
-              <button
-                onClick={() => setWorkspaceView('admin-console')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-neutral-900 hover:bg-black text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
-              >
-                <Shield className="w-3.5 h-3.5 text-blue-300" />
-                <span>进入管理后台</span>
-              </button>
+                <button
+                  onClick={() => setIsAdminLoginOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-neutral-900 hover:bg-black text-white text-xs font-semibold shadow-2xs transition-all cursor-pointer"
+                >
+                  <Shield className="w-3.5 h-3.5 text-purple-300" />
+                  <span>管理员登录</span>
+                </button>
+              </>
             ) : (
-              <button
-                onClick={() => setIsAdminLoginOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>管理员 D1 登录</span>
-              </button>
+              <>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingAvatar}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200 shadow-2xs transition-all cursor-pointer disabled:opacity-50"
+                >
+                  <Upload className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{isUploadingAvatar ? '上传中...' : '上传头像'}</span>
+                </button>
+
+                <button
+                  onClick={() => setIsEditModalOpen(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-white hover:bg-neutral-50 text-neutral-800 text-xs font-semibold border border-neutral-200/80 shadow-2xs transition-all cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-neutral-500" />
+                  <span>编辑资料</span>
+                </button>
+
+                {profile.role === 'admin' ? (
+                  <button
+                    onClick={() => setWorkspaceView('admin-console')}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-purple-900 hover:bg-purple-950 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-purple-300" />
+                    <span>进入管理后台</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsAdminLoginOpen(true)}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-neutral-900 hover:bg-black text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>管理员 D1 鉴权</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={logout}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white hover:bg-rose-50 text-rose-600 text-xs font-semibold border border-rose-200 shadow-2xs transition-all cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>退出</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -1297,14 +1491,89 @@ export const UserCenterView: React.FC = () => {
           <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
             <div>
               <h3 className="font-bold text-neutral-900 text-base">个人档案与量化资质</h3>
-              <p className="text-xs text-neutral-500 mt-0.5">机构量化投研认证信息</p>
+              <p className="text-xs text-neutral-500 mt-0.5">机构量化投研认证信息与 Cloudflare D1 云端头像同步</p>
             </div>
-            <button
-              onClick={() => setIsEditModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-neutral-100 hover:bg-neutral-200 text-xs font-semibold text-neutral-800 cursor-pointer"
-            >
-              编辑资料
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingAvatar}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200 cursor-pointer disabled:opacity-50"
+              >
+                <Upload className="w-3.5 h-3.5 text-blue-600" />
+                <span>{isUploadingAvatar ? '上传中...' : '上传头像'}</span>
+              </button>
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-black text-xs font-semibold text-white cursor-pointer shadow-2xs"
+              >
+                编辑资料
+              </button>
+            </div>
+          </div>
+
+          {/* Avatar Management Card */}
+          <div className="p-5 rounded-2xl bg-slate-50/80 border border-neutral-200/70 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-white border border-neutral-200 shadow-xs p-1 shrink-0 overflow-hidden">
+                  <img
+                    src={profile.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(profile.username || 'QuantLead')}&backgroundColor=f8fafc`}
+                    alt={profile.name}
+                    className="w-full h-full object-cover rounded-xl"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(profile.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                    }}
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-xs text-neutral-900">当前头像与云端存储</span>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                      D1 数据库绑定
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-neutral-500 mt-0.5">
+                    支持自定义上传 (JPG/PNG/WebP，自动压缩并持久化存储在 Cloudflare D1/R2) 或选择下方 Open Peeps 预设
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingAvatar}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-neutral-100 border border-neutral-200 text-neutral-800 text-xs font-semibold shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  <Camera className="w-3.5 h-3.5 text-neutral-600" />
+                  <span>上传新照片</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Open Peeps preset bar */}
+            <div className="pt-2 border-t border-neutral-200/60">
+              <div className="text-[11px] font-bold text-neutral-700 mb-2 flex items-center gap-1">
+                <span>快速切换 Open Peeps 风格预设头像:</span>
+              </div>
+              <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+                {AVATAR_PRESETS.map((av) => (
+                  <button
+                    key={av.id}
+                    type="button"
+                    title={av.name}
+                    onClick={() => handleSelectPresetAvatar(av.url)}
+                    className={cn(
+                      'w-11 h-11 rounded-2xl p-0.5 border-2 transition-all shrink-0 cursor-pointer',
+                      profile.avatar === av.url ? 'border-blue-600 ring-2 ring-blue-400/30 scale-105 shadow-xs' : 'border-neutral-200 bg-white opacity-80 hover:opacity-100 hover:border-neutral-400'
+                    )}
+                  >
+                    <img src={av.url} alt={av.name} className="w-full h-full object-cover rounded-xl" />
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -1442,23 +1711,54 @@ export const UserCenterView: React.FC = () => {
               </button>
             </div>
 
-            {/* Avatar Selector */}
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-neutral-700">选择头像风格</label>
-              <div className="flex items-center gap-3 overflow-x-auto pb-1">
-                {AVATAR_PRESETS.map((av) => (
-                  <button
-                    key={av.id}
-                    type="button"
-                    onClick={() => setEditForm({ ...editForm, avatar: av.url })}
-                    className={cn(
-                      'w-12 h-12 rounded-2xl p-0.5 border-2 transition-all shrink-0 cursor-pointer',
-                      editForm.avatar === av.url ? 'border-blue-600 scale-105 shadow-xs' : 'border-neutral-200 opacity-70 hover:opacity-100'
-                    )}
-                  >
-                    <img src={av.url} alt={av.name} className="w-full h-full object-cover rounded-xl" />
-                  </button>
-                ))}
+            {/* Avatar Selector & Upload in Edit Modal */}
+            <div className="p-4 rounded-2xl bg-neutral-50 border border-neutral-200/70 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-neutral-800">
+                  头像与形象设置
+                </label>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingAvatar}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{isUploadingAvatar ? '处理中...' : '上传本地图片'}</span>
+                </button>
+              </div>
+
+              {/* Preview and Presets */}
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-white border-2 border-blue-500 shadow-xs p-0.5 shrink-0 overflow-hidden">
+                  <img
+                    src={editForm.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(editForm.username || 'QuantLead')}&backgroundColor=f8fafc`}
+                    alt="头像预览"
+                    className="w-full h-full object-cover rounded-xl"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(editForm.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                    }}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] text-neutral-500 mb-1.5">或挑选下方 Open Peeps 经典手绘形象：</div>
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                    {AVATAR_PRESETS.map((av) => (
+                      <button
+                        key={av.id}
+                        type="button"
+                        title={av.name}
+                        onClick={() => setEditForm({ ...editForm, avatar: av.url })}
+                        className={cn(
+                          'w-9 h-9 rounded-xl p-0.5 border-2 transition-all shrink-0 cursor-pointer',
+                          editForm.avatar === av.url ? 'border-blue-600 ring-2 ring-blue-400/30 scale-105 shadow-xs' : 'border-neutral-200 bg-white opacity-70 hover:opacity-100'
+                        )}
+                      >
+                        <img src={av.url} alt={av.name} className="w-full h-full object-cover rounded-lg" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1600,7 +1900,7 @@ export const UserCenterView: React.FC = () => {
             </div>
 
             <p className="text-xs text-neutral-500">
-              采用 Cloudflare D1 数据库加密核验。用户名 <code className="font-bold text-blue-600">admin</code>，密码加密保存在 D1 数据库中。
+              采用 Cloudflare D1 数据库 SHA-256 加密核验管理员身份与权限凭据。
             </p>
 
             <form onSubmit={handleAdminD1Login} className="space-y-3.5 text-xs">
@@ -1609,6 +1909,7 @@ export const UserCenterView: React.FC = () => {
                 <input
                   type="text"
                   required
+                  placeholder="请输入管理员用户名"
                   value={adminUsername}
                   onChange={(e) => setAdminUsername(e.target.value)}
                   className="w-full px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl font-mono text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"

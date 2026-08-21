@@ -39,6 +39,8 @@ interface AppContextType {
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (payload: any) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
+  updateUserAvatar: (avatarUrl: string) => Promise<{ success: boolean; user: UserProfile }>;
+  updateUserProfile: (updates: Partial<UserProfile>) => Promise<{ success: boolean; user: UserProfile }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -126,11 +128,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await UserService.logout();
     setIsAuthenticated(false);
     setCurrentUser(UserService.getProfile());
-    setCurrentRoute('landing');
-    setWorkspaceView('overview');
+    // Keep user on the current page/view when logging out instead of forcing route back to landing
     setIsAuthModalOpen(false);
     setIsCmdKOpen(false);
     setIsAskAIOpen(false);
+  };
+
+  const updateUserAvatar = async (avatarUrl: string): Promise<{ success: boolean; user: UserProfile }> => {
+    const res = await UserService.updateAvatarCloud(avatarUrl);
+    setCurrentUser(res.user);
+    return res;
+  };
+
+  const updateUserProfile = async (updates: Partial<UserProfile>): Promise<{ success: boolean; user: UserProfile }> => {
+    const res = await UserService.updateProfileCloud(updates);
+    setCurrentUser(res.user);
+    return res;
   };
 
   const toggleMarketColorMode = () => {
@@ -213,6 +226,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         login,
         register,
         logout,
+        updateUserAvatar,
+        updateUserProfile,
       }}
     >
       {children}
