@@ -12,10 +12,10 @@ interface AetherLogoProps {
 
 const sizeConfig = {
   xs: { box: 'w-6 h-6 rounded-lg p-0.5', text: 'text-sm' },
-  sm: { box: 'w-7 h-7 rounded-lg p-0.5', text: 'text-sm' },
-  md: { box: 'w-8 h-8 rounded-xl p-1', text: 'text-base' },
-  lg: { box: 'w-10 h-10 rounded-xl p-1.5', text: 'text-lg' },
-  xl: { box: 'w-14 h-14 rounded-2xl p-2', text: 'text-xl' },
+  sm: { box: 'w-8 h-8 rounded-lg p-0.5', text: 'text-sm' },
+  md: { box: 'w-9 h-9 rounded-xl p-0.5', text: 'text-base' },
+  lg: { box: 'w-11 h-11 rounded-xl p-1', text: 'text-lg' },
+  xl: { box: 'w-16 h-16 rounded-2xl p-1.5', text: 'text-xl' },
 };
 
 export const AetherLogo: React.FC<AetherLogoProps> = ({
