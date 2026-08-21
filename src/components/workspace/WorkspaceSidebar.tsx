@@ -214,10 +214,17 @@ export const WorkspaceSidebar: React.FC = () => {
           {!collapsed && (
             <div
               onClick={() => setCurrentRoute('landing')}
-              className="flex items-center gap-2 cursor-pointer group"
+              className="flex items-center gap-2.5 cursor-pointer group"
             >
-              <div className="w-7 h-7 rounded-lg bg-neutral-900 flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                AQ
+              <div className="w-7 h-7 rounded-lg overflow-hidden bg-neutral-900 flex items-center justify-center text-white text-xs font-bold shadow-xs border border-neutral-200/50">
+                <img
+                  src="/logo.png"
+                  alt="AetherQuant Logo"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }}
+                />
               </div>
               <span className="font-bold text-sm text-neutral-900 tracking-tight group-hover:text-black">
                 AetherQuant
@@ -227,9 +234,16 @@ export const WorkspaceSidebar: React.FC = () => {
           {collapsed && (
             <div
               onClick={() => setCurrentRoute('landing')}
-              className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs mx-auto cursor-pointer"
+              className="w-8 h-8 rounded-lg overflow-hidden bg-neutral-900 text-white flex items-center justify-center font-bold text-xs mx-auto cursor-pointer shadow-xs border border-neutral-200/50"
             >
-              AQ
+              <img
+                src="/logo.png"
+                alt="AQ"
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
+              />
             </div>
           )}
           <button

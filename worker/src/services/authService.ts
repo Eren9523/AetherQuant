@@ -113,10 +113,55 @@ export class WorkerAuthService {
         )
         .run();
 
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS research_threads (
+             id TEXT PRIMARY KEY,
+             user_id TEXT NOT NULL,
+             title TEXT NOT NULL,
+             market_context TEXT DEFAULT 'CN',
+             active_symbol TEXT,
+             model TEXT,
+             message_count INTEGER NOT NULL DEFAULT 0,
+             pinned INTEGER NOT NULL DEFAULT 0,
+             archived INTEGER NOT NULL DEFAULT 0,
+             created_at TEXT NOT NULL,
+             updated_at TEXT NOT NULL,
+             last_message_at TEXT NOT NULL,
+             deleted_at TEXT
+           )`
+        )
+        .run();
+
+      await db
+        .prepare(
+          `CREATE TABLE IF NOT EXISTS research_messages (
+             id TEXT PRIMARY KEY,
+             thread_id TEXT NOT NULL,
+             user_id TEXT NOT NULL,
+             client_message_id TEXT,
+             role TEXT NOT NULL,
+             content TEXT NOT NULL,
+             status TEXT NOT NULL,
+             provider TEXT,
+             model TEXT,
+             input_tokens INTEGER NOT NULL DEFAULT 0,
+             output_tokens INTEGER NOT NULL DEFAULT 0,
+             latency_ms INTEGER,
+             error_code TEXT,
+             error_message TEXT,
+             created_at TEXT NOT NULL,
+             updated_at TEXT NOT NULL,
+             started_at TEXT,
+             completed_at TEXT
+           )`
+        )
+        .run();
+
       const adminHash = await hashPassword('penguin778', DEFAULT_SALT);
       await db
         .prepare(
-          `INSERT OR REPLACE INTO users (id, username, email, name, role, department, account_type, avatar_url, status, created_at, updated_at, last_login)
+          `INSERT OR IGNORE INTO users (id, username, email, name, role, department, account_type, avatar_url, status, created_at, updated_at, last_login)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .bind(
@@ -137,7 +182,7 @@ export class WorkerAuthService {
 
       await db
         .prepare(
-          `INSERT OR REPLACE INTO user_credentials (id, user_id, username, password_hash, salt, role, updated_at)
+          `INSERT OR IGNORE INTO user_credentials (id, user_id, username, password_hash, salt, role, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .bind('cred_admin', 'usr_admin_001', 'admin', adminHash, DEFAULT_SALT, 'admin', now)
@@ -145,7 +190,7 @@ export class WorkerAuthService {
 
       this.isD1Initialized = true;
     } catch (e) {
-      console.warn('[WorkerAuth] D1 initialization skipped or fallback to memory:', e);
+      console.warn('[WorkerAuth] D1 initialization error, fallback to memory:', e);
     }
   }
 
@@ -504,6 +549,7 @@ export class WorkerAuthService {
     if (!token) return { success: false };
 
     if (db) {
+      await this.initD1(db);
       try {
         const sess = await db
           .prepare(`SELECT * FROM sessions WHERE token = ?`)
@@ -535,8 +581,14 @@ export class WorkerAuthService {
             };
           }
         }
-      } catch (err) {
-        console.warn('[WorkerAuth] Session lookup error in D1:', err);
+      } catch (err: any) {
+        // If table was missing or transient error, attempt table init once
+        if (err?.message?.includes('no such table')) {
+          this.isD1Initialized = false;
+          await this.initD1(db);
+        } else {
+          console.warn('[WorkerAuth] Session lookup error in D1:', err);
+        }
       }
     }
 
@@ -551,6 +603,7 @@ export class WorkerAuthService {
 
   public static async getAllUsers(db?: D1Database): Promise<WorkerQuantUser[]> {
     if (db) {
+      await this.initD1(db);
       try {
         const res = await db.prepare(`SELECT * FROM users ORDER BY created_at DESC`).all<any>();
         if (res.results && res.results.length > 0) {
@@ -577,6 +630,7 @@ export class WorkerAuthService {
 
   public static async logoutUser(db: D1Database | undefined, token: string): Promise<void> {
     if (db && token) {
+      await this.initD1(db);
       try {
         await db.prepare(`DELETE FROM sessions WHERE token = ?`).bind(token).run();
       } catch {}

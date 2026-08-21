@@ -36,6 +36,9 @@ async function startServer() {
     });
   });
 
+  // Static public assets
+  app.use(express.static(path.join(process.cwd(), 'public')));
+
   // Vite middleware for development vs Static file serving for production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

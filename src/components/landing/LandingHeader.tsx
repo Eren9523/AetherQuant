@@ -9,9 +9,16 @@ export const LandingHeader: React.FC = () => {
     <header className="fixed top-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-md border-b border-neutral-200/50 transition-all">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Brand */}
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-neutral-900 flex items-center justify-center text-white font-bold text-sm shadow-sm">
-            AQ
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+          <div className="w-8 h-8 rounded-xl overflow-hidden bg-neutral-900 flex items-center justify-center text-white font-bold text-sm shadow-xs border border-neutral-200/50">
+            <img
+              src="/logo.png"
+              alt="AQ Logo"
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                (e.currentTarget as HTMLElement).style.display = 'none';
+              }}
+            />
           </div>
           <span className="text-lg font-bold text-neutral-900 tracking-tight font-sans">
             Aether<span className="font-light text-neutral-500">Quant</span>
