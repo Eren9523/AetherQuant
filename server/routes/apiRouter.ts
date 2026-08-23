@@ -483,7 +483,7 @@ apiRouter.get('/history/sessions', (req: Request, res: Response) => {
         {
           id: 'welcome-msg',
           sender: 'assistant',
-          content: `你好！我是 AetherQuant AI 金融量化研究助手。你可以用自然语言发起多因子选股、行情归因诊股、财报拆解与量化策略回测。例如：“从沪深300中筛选60日动量排名前20%且波动率较低的股票”`,
+          content: `你好！我是 Penguin Quant AI 金融量化研究助手。你可以用自然语言发起多因子选股、行情归因诊股、财报拆解与量化策略回测。例如：“从沪深300中筛选60日动量排名前20%且波动率较低的股票”`,
           steps: ['已连通 A股/美股实时行情图谱', '挂载 AKShare / SEC EDGAR 数据源', '加载 60+ 经典 Alpha 因子表'],
         },
       ]),

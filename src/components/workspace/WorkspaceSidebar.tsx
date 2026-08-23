@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
-import { AetherLogo } from '../common/AetherLogo';
+import { PenguinLogo } from '../common/PenguinLogo';
 
 interface NavItem {
   id: WorkspaceView;
@@ -217,7 +217,7 @@ export const WorkspaceSidebar: React.FC = () => {
               onClick={() => setCurrentRoute('landing')}
               className="cursor-pointer group py-1"
             >
-              <AetherLogo size="sm" showText={true} textClassName="text-sm group-hover:text-black transition-colors" />
+              <PenguinLogo size="sm" showText={true} textClassName="text-sm group-hover:text-black transition-colors" />
             </div>
           )}
           {collapsed && (
@@ -225,7 +225,7 @@ export const WorkspaceSidebar: React.FC = () => {
               onClick={() => setCurrentRoute('landing')}
               className="mx-auto cursor-pointer"
             >
-              <AetherLogo size="xs" showText={false} />
+              <PenguinLogo size="xs" showText={false} />
             </div>
           )}
           <button

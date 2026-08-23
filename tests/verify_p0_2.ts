@@ -147,13 +147,13 @@ async function runVerification() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Origin': 'https://aetherquant-prod.example.com',
+        'Origin': 'https://penguinquant-prod.example.com',
       },
       body: JSON.stringify({ prompt: 'Production test' }),
     });
 
     const customEnv: any = {
-      APP_ORIGIN: 'https://aetherquant-prod.example.com',
+      APP_ORIGIN: 'https://penguinquant-prod.example.com',
       DEEPSEEK_API_KEY: '',
     };
 

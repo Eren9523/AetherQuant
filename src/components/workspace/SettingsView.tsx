@@ -1495,7 +1495,7 @@ export const SettingsView: React.FC = () => {
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2.5">
                   <FileText className="w-5 h-5 text-blue-600" />
-                  <h3 className="text-base font-bold text-slate-900">AetherQuant 平台说明文档 (README)</h3>
+                  <h3 className="text-base font-bold text-slate-900">Penguin Quant 平台说明文档 (README)</h3>
                 </div>
                 <button
                   onClick={() => setShowReadmeModal(false)}
@@ -1512,7 +1512,7 @@ export const SettingsView: React.FC = () => {
 
                 <h4 className="font-bold text-sm text-slate-900">1. 系统架构概述</h4>
                 <p>
-                  AetherQuant 是面向专业量化研究员与机构投资者的全流程 AI 量化研究平台，集成了从
+                  Penguin Quant 是面向专业量化研究员与机构投资者的全流程 AI 量化研究平台，集成了从
                   AKShare/Tushare 数据接入、多因子特征提取、Alpha 研报知识库解析到 LSTM/XGBoost
                   机器学习建模、事件驱动回测引擎与风控熔断的一站式工作流。
                 </p>

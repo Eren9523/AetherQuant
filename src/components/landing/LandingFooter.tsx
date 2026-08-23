@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { ArrowRight, BookOpen, RotateCcw } from 'lucide-react';
-import { AetherLogo } from '../common/AetherLogo';
+import { PenguinLogo } from '../common/PenguinLogo';
 
 export const LandingFooter: React.FC = () => {
   const { enterWorkspaceWithTransition } = useApp();
@@ -101,7 +101,7 @@ export const LandingFooter: React.FC = () => {
               onClick={() => enterWorkspaceWithTransition('overview')}
               className="w-full sm:w-auto px-9 py-4 bg-neutral-900 hover:bg-black text-white font-bold text-sm rounded-2xl shadow-xl hover:shadow-2xl hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2 group"
             >
-              <span>进入 AetherQuant 工作台</span>
+              <span>进入 Penguin Quant 工作台</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
             <button
@@ -117,9 +117,9 @@ export const LandingFooter: React.FC = () => {
         {/* Footer Subtext */}
         <div className="pt-20 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between text-xs text-neutral-400 gap-4">
           <div className="flex items-center gap-3">
-            <AetherLogo size="xs" showText={true} textClassName="text-xs" />
+            <PenguinLogo size="xs" showText={true} textClassName="text-xs" />
             <span className="text-neutral-300">|</span>
-            <span>© 2026 AetherQuant AI Lab. 版权所有。</span>
+            <span>© 2026 Penguin Quant AI Lab. 版权所有。</span>
           </div>
           <div className="flex items-center gap-6 text-neutral-500 font-medium">
             <a href="#demo" className="hover:text-neutral-900 transition-colors">终端演示</a>

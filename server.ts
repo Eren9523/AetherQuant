@@ -30,7 +30,7 @@ async function startServer() {
   app.get('/api/health', (req, res) => {
     res.json({
       status: 'ok',
-      engine: 'AetherQuant Full-Stack Engine',
+      engine: 'Penguin Quant Full-Stack Engine',
       port: PORT,
       timestamp: new Date().toISOString(),
     });
@@ -55,7 +55,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[AetherQuant] Server running on http://0.0.0.0:${PORT}`);
+    console.log(`[Penguin Quant] Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

@@ -10,7 +10,7 @@ export interface ChatMessage {
 
 export class DeepSeekProxyService {
   private static readonly SYSTEM_PROMPT = `
-你是由 AetherQuant 平台驱动的 AI 量化研究助手（DeepSeek Quant Assistant）。
+你是由 Penguin Quant 平台驱动的 AI 量化研究助手（DeepSeek Quant Assistant）。
 你的专业领域涵盖：A股与美股量化策略设计、多因子模型构建（Barra/Fama-French）、AKShare金融数据清洗与特征工程、机器学习预测模型（LightGBM/LSTM）、严格市场规则回测（包含T+1、滑点与印花税）以及风险归因。
 
 回答原则：

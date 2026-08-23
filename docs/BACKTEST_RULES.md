@@ -1,4 +1,4 @@
-# AetherQuant 严格回测规则与仿真标准 (Backtest Rules)
+# Penguin Quant 严格回测规则与仿真标准 (Backtest Rules)
 
 ## 1. A股市场规则执行标准 (CN Market Rules)
 1. **T+1 交易限制**：

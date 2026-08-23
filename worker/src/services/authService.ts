@@ -33,7 +33,7 @@ const inMemoryUsers: Map<string, WorkerQuantUser> = new Map([
       id: 'usr_admin_001',
       username: 'admin',
       name: '系统管理员',
-      email: 'admin@aetherquant.io',
+      email: 'admin@penguinquant.io',
       role: 'admin',
       department: '量化系统管理部',
       accountType: 'System Administrator',
@@ -167,7 +167,7 @@ export class WorkerAuthService {
         .bind(
           'usr_admin_001',
           'admin',
-          'admin@aetherquant.io',
+          'admin@penguinquant.io',
           '系统管理员',
           'admin',
           '量化系统管理部',
@@ -259,7 +259,7 @@ export class WorkerAuthService {
               id: userRow?.id || cred.user_id,
               username: cred.username,
               name: userRow?.name || cred.username,
-              email: userRow?.email || `${cred.username}@aetherquant.io`,
+              email: userRow?.email || `${cred.username}@penguinquant.io`,
               role: userRow?.role || cred.role || 'free',
               department: userRow?.department || '量化投研中心',
               accountType: userRow?.account_type || 'Quantitative Pro',
@@ -332,7 +332,7 @@ export class WorkerAuthService {
       return { success: false, error: '请输入有效的用户名或电子邮箱' };
     }
 
-    const email = rawEmail || `${rawUsername}@aetherquant.io`;
+    const email = rawEmail || `${rawUsername}@penguinquant.io`;
     if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
       return { success: false, error: '请输入正确的邮箱格式 (如 user@example.com)' };
     }

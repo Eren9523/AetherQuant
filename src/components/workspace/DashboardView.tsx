@@ -69,7 +69,7 @@ export const DashboardView: React.FC = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-neutral-900">AI 每日收盘深度总结报告</h3>
-                  <p className="text-xs text-neutral-400">Aether AI 引擎根据全市场 60+ 因子与行情融合分析</p>
+                  <p className="text-xs text-neutral-400">Penguin AI 引擎根据全市场 60+ 因子与行情融合分析</p>
                 </div>
               </div>
               <span className="text-xs font-mono text-neutral-400">今天 15:30 自动生成</span>

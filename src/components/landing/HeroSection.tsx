@@ -42,7 +42,7 @@ export const HeroSection: React.FC = () => {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white border border-neutral-200/80 shadow-[0_2px_10px_rgba(0,0,0,0.02)] text-xs font-medium text-neutral-700">
           <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-          <span>AetherQuant 2.0 深度融合大模型与 Alpha 因子库</span>
+          <span>Penguin Quant 2.0 深度融合大模型与 Alpha 因子库</span>
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
         </div>
 

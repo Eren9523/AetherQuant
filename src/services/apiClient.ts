@@ -1,6 +1,6 @@
 /**
- * AetherQuant Frontend API Gateway Client
- * Conforms to strict AetherQuant V1 Contract:
+ * Penguin Quant Frontend API Gateway Client
+ * Conforms to strict Penguin Quant V1 Contract:
  * - Unwraps success { success: true, data: T, request_id } -> returns T
  * - Normalizes failures { success: false, error: { code, message }, request_id } -> throws ApiError
  * - Streamlined SSE Event Contract: delta / done / error
@@ -220,7 +220,7 @@ export class ApiClient {
   }
 
   /**
-   * SSE Stream Consumer conforming to AetherQuant Event Contract:
+   * SSE Stream Consumer conforming to Penguin Quant Event Contract:
    * - {"type":"delta","text":"..."}
    * - {"type":"done","meta":{...}}
    * - {"type":"error","error":{"code":"...","message":"..."}}

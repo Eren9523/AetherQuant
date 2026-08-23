@@ -1,13 +1,13 @@
 {
-  "name": "aetherquant-worker",
+  "name": "penguinquant-worker",
   "version": "1.0.0",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "d1:migrate": "wrangler d1 migrations apply aetherquant-db --local",
-    "d1:migrate:remote": "wrangler d1 migrations apply aetherquant-db --remote"
+    "d1:migrate": "wrangler d1 migrations apply penguinquant-db --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply penguinquant-db --remote"
   },
   "dependencies": {
     "hono": "^4.7.4",

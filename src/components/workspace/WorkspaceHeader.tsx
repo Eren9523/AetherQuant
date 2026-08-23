@@ -132,7 +132,7 @@ export const WorkspaceHeader: React.FC = () => {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-900 hover:bg-black text-white text-xs font-semibold shadow-sm transition-all"
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-          <span>Ask Aether</span>
+          <span>Ask Penguin</span>
         </button>
 
         {/* User Profile & Dropdown (iOS Frosted Glass Style) */}

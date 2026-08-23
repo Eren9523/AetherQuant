@@ -1,7 +1,7 @@
 import React from 'react';
-import { AETHER_LOGO_BASE64 } from '../../assets/logoBase64';
+import { PENGUIN_LOGO_BASE64 } from '../../assets/logoBase64';
 
-interface AetherLogoProps {
+interface PenguinLogoProps {
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showText?: boolean;
   className?: string;
@@ -18,7 +18,7 @@ const sizeConfig = {
   xl: { box: 'w-16 h-16 rounded-2xl p-1.5', text: 'text-xl' },
 };
 
-export const AetherLogo: React.FC<AetherLogoProps> = ({
+export const PenguinLogo: React.FC<PenguinLogoProps> = ({
   size = 'md',
   showText = true,
   className = '',
@@ -37,8 +37,8 @@ export const AetherLogo: React.FC<AetherLogoProps> = ({
         className={`${config.box} ${bgStyle} flex items-center justify-center overflow-hidden flex-shrink-0 transition-all`}
       >
         <img
-          src={AETHER_LOGO_BASE64}
-          alt="AetherQuant"
+          src={PENGUIN_LOGO_BASE64}
+          alt="Penguin Quant"
           className={`w-full h-full object-contain ${imgClassName}`}
           loading="eager"
           decoding="sync"
@@ -54,7 +54,7 @@ export const AetherLogo: React.FC<AetherLogoProps> = ({
         <span
           className={`font-bold tracking-tight text-neutral-900 font-sans leading-none ${config.text} ${textClassName}`}
         >
-          Aether<span className="font-light text-neutral-500">Quant</span>
+          Penguin<span className="font-light text-neutral-500"> Quant</span>
         </span>
       )}
     </div>

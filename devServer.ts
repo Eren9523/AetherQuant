@@ -1,5 +1,5 @@
 /**
- * [AETHERQUANT WORKER DEV SERVER]
+ * [PENGUIN QUANT WORKER DEV SERVER]
  * Convenience Dev Server / Binding Proxy
  * NOT Production Runtime Emulator
  *
@@ -107,13 +107,13 @@ async function startWorkerDevServer() {
       // Production static fallback
       const distPath = path.join(process.cwd(), 'dist');
       res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end('<h1>AetherQuant Production Build</h1>');
+      res.end('<h1>Penguin Quant Production Build</h1>');
     }
   });
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[AetherQuant Primary Dev] Worker Hono Gateway listening on http://0.0.0.0:${PORT}`);
-    console.log(`[AetherQuant Primary Dev] Mode: ${process.env.VITE_APP_MODE || 'real'}`);
+    console.log(`[Penguin Quant Primary Dev] Worker Hono Gateway listening on http://0.0.0.0:${PORT}`);
+    console.log(`[Penguin Quant Primary Dev] Mode: ${process.env.VITE_APP_MODE || 'real'}`);
   });
 }
 

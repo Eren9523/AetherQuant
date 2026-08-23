@@ -58,7 +58,7 @@ export class PaperTradingService {
       account = {
         id: `acc_${userId}`,
         userId,
-        name: 'AetherQuant 仿真模拟账户',
+        name: 'Penguin Quant 仿真模拟账户',
         currency: 'CNY',
         initialBalance: 1000000.0,
         cashBalance: 654200.0,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Sparkles, ArrowRight, Github, LogIn, UserPlus, LogOut, User, ShieldCheck } from 'lucide-react';
-import { AetherLogo } from '../common/AetherLogo';
+import { PenguinLogo } from '../common/PenguinLogo';
 
 export const LandingHeader: React.FC = () => {
   const { enterWorkspaceWithTransition, isAuthenticated, currentUser, openAuthModal, logout } = useApp();
@@ -11,7 +11,7 @@ export const LandingHeader: React.FC = () => {
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-          <AetherLogo size="md" showText={true} textClassName="text-lg" />
+          <PenguinLogo size="md" showText={true} textClassName="text-lg" />
           <span className="hidden sm:inline-flex px-2 py-0.5 text-[10px] font-mono font-medium bg-neutral-100 text-neutral-600 rounded-full border border-neutral-200/80">
             AI Native Quant
           </span>

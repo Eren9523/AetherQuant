@@ -32,7 +32,7 @@ export const CommandPalette: React.FC = () => {
   const quickActions = [
     {
       title: '进入 AI 研究中心',
-      desc: '向 Aether AI 发起多因子策略提问与市场扫描',
+      desc: '向 Penguin AI 发起多因子策略提问与市场扫描',
       icon: <Cpu className="w-4 h-4 text-purple-600" />,
       action: () => {
         enterWorkspaceWithTransition('ai-research');

@@ -1,4 +1,4 @@
-# AetherQuant 数据模型与存储字典 (Data Model)
+# Penguin Quant 数据模型与存储字典 (Data Model)
 
 ## 1. Cloudflare D1 核心数据表结构
 

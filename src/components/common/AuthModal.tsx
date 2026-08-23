@@ -16,7 +16,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { useI18n } from '../../utils/i18n';
 import { formatErrorMessage } from '../../utils/formatters';
-import { AetherLogo } from './AetherLogo';
+import { PenguinLogo } from './PenguinLogo';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -266,7 +266,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="relative w-full md:w-[58%] bg-white p-8 md:p-10 flex flex-col justify-center">
           {/* 标题与徽标 */}
           <div className="text-center mb-6 flex flex-col items-center">
-            <AetherLogo size="sm" showText={false} className="mb-2.5" />
+            <PenguinLogo size="sm" showText={false} className="mb-2.5" />
             <h2 className="text-2xl md:text-3xl font-extrabold text-neutral-800 tracking-tight">
               {isSignUp ? t.auth.createAccountTitle : t.auth.signInTitle}
             </h2>

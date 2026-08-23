@@ -35,7 +35,7 @@ async function runP1Verification() {
     const workerWranglerExists = fs.existsSync(path.resolve('./worker/wrangler.jsonc'));
     const rootContent = rootWranglerExists ? fs.readFileSync(path.resolve('./wrangler.jsonc'), 'utf-8') : '';
 
-    const hasD1 = rootContent.includes('"database_name": "aetherquant-db"');
+    const hasD1 = rootContent.includes('"database_name": "penguinquant-db"');
     const hasR2 = rootContent.includes('"binding": "DATA_BUCKET"');
     const hasMigrationsDir = rootContent.includes('"migrations_dir": "worker/migrations"');
     const hasAssets = rootContent.includes('"binding": "ASSETS"');
@@ -85,13 +85,13 @@ async function runP1Verification() {
   // ----------------------------------------------------
   {
     const testEnv: any = {
-      APP_ORIGIN: 'https://aetherquant.app',
-      ALLOWED_ORIGINS: 'https://staging.aetherquant.app,https://preview.aetherquant.app',
+      APP_ORIGIN: 'https://penguinquant.app',
+      ALLOWED_ORIGINS: 'https://staging.penguinquant.app,https://preview.penguinquant.app',
     };
 
     const isLocalhostAllowed = isAllowedOrigin('http://localhost:3000', testEnv);
-    const isAppOriginAllowed = isAllowedOrigin('https://aetherquant.app', testEnv);
-    const isAllowedListAllowed = isAllowedOrigin('https://staging.aetherquant.app', testEnv);
+    const isAppOriginAllowed = isAllowedOrigin('https://penguinquant.app', testEnv);
+    const isAllowedListAllowed = isAllowedOrigin('https://staging.penguinquant.app', testEnv);
     const isWildcardRunAppBlocked = !isAllowedOrigin('https://evil-unauthorized.run.app', testEnv);
     const isWildcardWorkersDevBlocked = !isAllowedOrigin('https://evil.workers.dev', testEnv);
     const isWildcardPagesDevBlocked = !isAllowedOrigin('https://phishing.pages.dev', testEnv);

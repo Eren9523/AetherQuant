@@ -1,5 +1,5 @@
 -- Migration: 0001_infrastructure.sql
--- Minimal system infrastructure table for AetherQuant D1 verification
+-- Minimal system infrastructure table for Penguin Quant D1 verification
 
 CREATE TABLE IF NOT EXISTS system_settings (
     key TEXT PRIMARY KEY,
@@ -9,4 +9,4 @@ CREATE TABLE IF NOT EXISTS system_settings (
 );
 
 INSERT OR IGNORE INTO system_settings (key, value)
-VALUES ('system_name', 'AetherQuant');
+VALUES ('system_name', 'Penguin Quant');

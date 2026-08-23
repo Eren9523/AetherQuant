@@ -1,5 +1,5 @@
 /**
- * AetherQuant i18n Translation Dictionary & Hook
+ * Penguin Quant i18n Translation Dictionary & Hook
  * 支持后期一键扩展与切换多语言（默认纯中文 zh-CN）
  */
 
@@ -9,7 +9,7 @@ export const translations = {
   zh: {
     // 认证与登录注册模块
     auth: {
-      signInTitle: '登录 AetherQuant',
+      signInTitle: '登录 Penguin Quant',
       createAccountTitle: '注册量化投研账号',
       leftWelcomeBackTitle: '欢迎回来！',
       leftHelloFriendTitle: '您好，量化研究员！',
@@ -38,7 +38,7 @@ export const translations = {
       errInvalidEmail: '邮箱格式不正确 (如 trader@example.com)',
       errPasswordShort: '密码长度至少需要 6 位',
       errPasswordMismatch: '两次输入的密码不一致，请核对',
-      successLogin: '验证成功，欢迎进入 AetherQuant！',
+      successLogin: '验证成功，欢迎进入 Penguin Quant！',
       successRegister: '注册成功！已安全写入 D1 数据库，正在登录...',
     },
     // 用户个人资料模块
@@ -69,7 +69,7 @@ export const translations = {
   },
   en: {
     auth: {
-      signInTitle: 'Sign In to AetherQuant',
+      signInTitle: 'Sign In to Penguin Quant',
       createAccountTitle: 'Create Quant Account',
       leftWelcomeBackTitle: 'Welcome Back !',
       leftHelloFriendTitle: 'Hello, Researcher !',
@@ -98,7 +98,7 @@ export const translations = {
       errInvalidEmail: 'Invalid email format (e.g. trader@example.com)',
       errPasswordShort: 'Password must be at least 6 characters',
       errPasswordMismatch: 'Passwords do not match',
-      successLogin: 'Authenticated successfully. Welcome to AetherQuant!',
+      successLogin: 'Authenticated successfully. Welcome to Penguin Quant!',
       successRegister: 'Registered successfully! Stored in D1 database.',
     },
     profile: {

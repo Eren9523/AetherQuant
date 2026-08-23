@@ -225,13 +225,13 @@ export const StockDetailView: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="text-xs font-bold flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-amber-300" />
-                Aether AI 对 [{stock.name}] 的深度研究结论:
+                Penguin AI 对 [{stock.name}] 的深度研究结论:
               </div>
               <button
                 onClick={() => setIsAskAIOpen(true)}
                 className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold rounded-lg transition-colors"
               >
-                在 Ask Aether 进一步发问
+                在 Ask Penguin 进一步发问
               </button>
             </div>
             <p className="text-xs text-neutral-300 leading-relaxed">

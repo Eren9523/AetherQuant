@@ -25,7 +25,7 @@ export const AskAIDrawer: React.FC = () => {
   >([
     {
       sender: 'assistant',
-      content: `我是 Aether AI 智能研究助理。我可以全天候为您解析市场、扫描因子分布、诊断股票筹码与评估策略回测风险。`,
+      content: `我是 Penguin AI 智能研究助理。我可以全天候为您解析市场、扫描因子分布、诊断股票筹码与评估策略回测风险。`,
       steps: ['已加载 A股/美股 全局行情与多因子知识库'],
     },
   ]);
@@ -88,7 +88,7 @@ export const AskAIDrawer: React.FC = () => {
           </div>
           <div>
             <div className="text-sm font-semibold text-neutral-900 flex items-center gap-1.5">
-              Ask Aether AI
+              Ask Penguin AI
               <span className="px-1.5 py-0.2 bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-mono rounded">
                 在线
               </span>
@@ -178,7 +178,7 @@ export const AskAIDrawer: React.FC = () => {
         {loading && (
           <div className="flex items-center gap-2 text-xs text-neutral-400 bg-white p-3 rounded-2xl border border-neutral-200/80 w-fit">
             <Loader2 className="w-4 h-4 animate-spin text-neutral-600" />
-            <span>Aether AI 正在思考并执行多因子矩阵计算...</span>
+            <span>Penguin AI 正在思考并执行多因子矩阵计算...</span>
           </div>
         )}
       </div>

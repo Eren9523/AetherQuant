@@ -884,7 +884,7 @@ export const AIResearchView: React.FC = () => {
     {
       id: 'doc-3',
       title: '2026 年 A股 AI 多因子选股策略与机器学习模型 IC 衰减研究.pdf',
-      source: 'AetherQuant AI Lab',
+      source: 'Penguin Quant AI Lab',
       pages: 24,
       date: '2026-03-01',
       status: '已提炼 8 个因子',
@@ -918,7 +918,7 @@ export const AIResearchView: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-2">
-            <span className="text-sm font-extrabold tracking-tight text-slate-900">Aether Research</span>
+            <span className="text-sm font-extrabold tracking-tight text-slate-900">Penguin Research</span>
             <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full border border-slate-200 font-semibold flex items-center gap-1">
               <span className={`w-1.5 h-1.5 rounded-full ${getUserAiConfig().channelMode === 'system' ? 'bg-emerald-500' : 'bg-blue-500'}`}></span>
               {getUserAiConfig().selectedModel === 'v4-pro' ? 'DeepSeek V4-Pro' : 'DeepSeek V4-Flash'}
@@ -1338,9 +1338,9 @@ export const AIResearchView: React.FC = () => {
                     {msg.sender === 'assistant' && (
                       <div className="flex items-center gap-2 pb-2.5 mb-2.5 border-b border-slate-100 text-xs font-bold text-slate-900">
                         <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-extrabold">
-                          A
+                          P
                         </div>
-                        <span>AetherQuant AI 量化研究助手</span>
+                        <span>Penguin Quant AI 量化研究助手</span>
                         <div className="ml-auto flex items-center gap-2">
                           <span className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
                             ● 行情可用 ● 因子可用
@@ -1376,7 +1376,7 @@ export const AIResearchView: React.FC = () => {
                       ) : (
                         <div className="flex items-center gap-2 text-xs text-slate-500 py-1 font-mono">
                           <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-700" />
-                          <span>Aether AI 正在计算并生成深度量化分析...</span>
+                          <span>Penguin AI 正在计算并生成深度量化分析...</span>
                         </div>
                       )
                     ) : (
@@ -1428,7 +1428,7 @@ export const AIResearchView: React.FC = () => {
               {loading && (
                 <div className="flex items-center gap-2 text-xs text-slate-500 p-3.5 bg-white rounded-2xl w-fit border border-slate-200/70 shadow-xs animate-pulse">
                   <Loader2 className="w-4 h-4 animate-spin text-slate-700" />
-                  <span>Aether AI 正在计算与整合因子特征...</span>
+                  <span>Penguin AI 正在计算与整合因子特征...</span>
                 </div>
               )}
               <div ref={messagesEndRef} />

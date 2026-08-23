@@ -102,7 +102,7 @@ export const AIResearchShowcase: React.FC = () => {
           <div className="px-4 py-3 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Terminal className="w-4 h-4 text-purple-400" />
-              <span className="text-xs font-mono text-neutral-400">AetherQuant AI Co-Pilot Terminal</span>
+              <span className="text-xs font-mono text-neutral-400">Penguin Quant AI Co-Pilot Terminal</span>
             </div>
             <div className="flex items-center gap-3">
               <button

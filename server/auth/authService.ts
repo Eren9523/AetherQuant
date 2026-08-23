@@ -83,7 +83,7 @@ export class D1AuthService {
           id: 'usr_admin_001',
           username: 'admin',
           name: '系统管理员',
-          email: 'admin@aetherquant.io',
+          email: 'admin@penguinquant.io',
           password: 'penguin778',
           role: 'admin',
           department: '量化系统管理部',
@@ -203,7 +203,7 @@ export class D1AuthService {
         id: u?.id || credRecord.user_id,
         username: credRecord.username,
         name: u?.name || credRecord.username,
-        email: u?.email || `${credRecord.username}@aetherquant.io`,
+        email: u?.email || `${credRecord.username}@penguinquant.io`,
         role: u?.role || credRecord.role || 'free',
         department: u?.department || '量化投研中心',
         accountType: u?.account_type || 'Quantitative Pro',
@@ -245,7 +245,7 @@ export class D1AuthService {
       return { success: false, error: '请输入有效的电子邮箱' };
     }
 
-    const email = rawEmail || `${rawUsername}@aetherquant.io`;
+    const email = rawEmail || `${rawUsername}@penguinquant.io`;
     // Validate email format simply
     if (rawEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
       return { success: false, error: '请输入正确的邮箱格式 (如 user@example.com)' };

@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: AetherQuant API Contract
+  title: Penguin Quant API Contract
   version: 1.0.0
-  description: High-performance API Specification for AetherQuant AI Quant Research & Trading Platform
+  description: High-performance API Specification for Penguin Quant AI Quant Research & Trading Platform
 servers:
   - url: /api/v1
     description: Integrated Gateway & Worker API

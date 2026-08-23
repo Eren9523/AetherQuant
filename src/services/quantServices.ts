@@ -24,9 +24,28 @@ import { mockMLModels } from '../mocks/mockMLModels';
 export const MarketService = {
   async getIndices(): Promise<StockQuote[]> {
     try {
-      const res = await ApiClient.get<any[]>('/market/indices');
-      if (res && Array.isArray(res) && res.length > 0) {
-        return res;
+      const res = await ApiClient.get<any>('/market/cn/spot', { symbols: '000001,399001,399006,000300' });
+      if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
+        return res.stocks.map((s: any) => ({
+          symbol: s.symbol,
+          name: s.name,
+          price: s.last ?? 0,
+          change: s.change ?? 0,
+          changePercent: s.change_pct ?? 0,
+          volume: s.volume ? (s.volume >= 10000 ? `${(s.volume / 10000).toFixed(1)}万` : s.volume.toString()) : '0',
+          turnover: s.turnover ? (s.turnover >= 100000000 ? `${(s.turnover / 100000000).toFixed(2)}亿` : `${(s.turnover / 10000).toFixed(1)}万`) : '0',
+          high: s.high ?? 0,
+          low: s.low ?? 0,
+          open: s.open ?? 0,
+          prevClose: s.prev_close ?? 0,
+          pe: s.pe_dynamic ?? 0,
+          pb: s.pb ?? 0,
+          marketCap: s.total_market_cap ? `${(s.total_market_cap / 100000000).toFixed(1)}亿` : '0',
+          industry: s.exchange === 'SH' ? '上海主板' : (s.exchange === 'SZ' ? '深圳主板' : '北交所'),
+          updatedAt: s.as_of ? new Date(s.as_of).toLocaleTimeString() : '实时行情',
+          market: 'CN',
+          currency: 'CNY',
+        }));
       }
     } catch (e) {
       if (RUNTIME_CONFIG.isRealMode) {
@@ -39,13 +58,37 @@ export const MarketService = {
 
   async getStocks(market: 'CN' | 'US' | 'ALL' = 'ALL'): Promise<StockQuote[]> {
     try {
-      const res = await ApiClient.get<any[]>('/market/stocks', { market });
-      if (res && Array.isArray(res) && res.length > 0) {
-        return res;
+      if (market === 'CN' || market === 'ALL') {
+        const res = await ApiClient.get<any>('/market/cn/spot');
+        if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
+          const cnStocks: StockQuote[] = res.stocks.map((s: any) => ({
+            symbol: s.symbol,
+            name: s.name,
+            price: s.last ?? 0,
+            change: s.change ?? 0,
+            changePercent: s.change_pct ?? 0,
+            volume: s.volume ? (s.volume >= 10000 ? `${(s.volume / 10000).toFixed(1)}万` : s.volume.toString()) : '0',
+            turnover: s.turnover ? (s.turnover >= 100000000 ? `${(s.turnover / 100000000).toFixed(2)}亿` : `${(s.turnover / 10000).toFixed(1)}万`) : '0',
+            high: s.high ?? 0,
+            low: s.low ?? 0,
+            open: s.open ?? 0,
+            prevClose: s.prev_close ?? 0,
+            pe: s.pe_dynamic ?? 0,
+            pb: s.pb ?? 0,
+            marketCap: s.total_market_cap ? `${(s.total_market_cap / 100000000).toFixed(1)}亿` : '0',
+            industry: s.exchange === 'SH' ? '沪市主板' : (s.exchange === 'SZ' ? '深市主板' : '北交所'),
+            updatedAt: s.as_of ? new Date(s.as_of).toLocaleTimeString() : '实时行情',
+            market: 'CN' as const,
+            currency: 'CNY' as const,
+          }));
+
+          if (market === 'CN') return cnStocks;
+          return [...cnStocks, ...mockUSStocks];
+        }
       }
     } catch (e) {
       if (RUNTIME_CONFIG.isRealMode) {
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '无法连接到行情服务 (MARKET_SERVICE_UNAVAILABLE)。');
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '无法连接到量化行情服务 (MARKET_SERVICE_UNAVAILABLE)。');
       }
       console.warn('[DEMO MODE] Loading mock stocks:', e);
     }
@@ -56,55 +99,72 @@ export const MarketService = {
   },
 
   async getStockDetail(symbol: string): Promise<StockQuote | undefined> {
-    try {
-      const q = await ApiClient.get<any>(`/quotes/${symbol}`);
-      if (q && q.symbol) {
-        return {
-          symbol: q.symbol,
-          name: q.name,
-          price: q.price,
-          change: q.change,
-          changePercent: q.changePercent,
-          volume: q.volume || '0',
-          turnover: q.turnover || '0',
-          high: q.high,
-          low: q.low,
-          open: q.open,
-          prevClose: q.prevClose,
-          pe: q.pe || 0,
-          pb: q.pb || 0,
-          marketCap: q.marketCap || '0',
-          industry: q.industry || '综合',
-          updatedAt: '实时行情',
-          market: (q.market || 'CN') as 'CN' | 'US',
-          currency: (q.currency || 'CNY') as 'CNY' | 'USD',
-        };
+    const cleanSym = symbol.replace(/[^0-9]/g, '').slice(0, 6);
+    if (cleanSym.length === 6) {
+      try {
+        const res = await ApiClient.get<any>('/market/cn/spot', { symbols: cleanSym });
+        if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
+          const s = res.stocks[0];
+          return {
+            symbol: s.symbol,
+            name: s.name,
+            price: s.last ?? 0,
+            change: s.change ?? 0,
+            changePercent: s.change_pct ?? 0,
+            volume: s.volume ? (s.volume >= 10000 ? `${(s.volume / 10000).toFixed(1)}万` : s.volume.toString()) : '0',
+            turnover: s.turnover ? (s.turnover >= 100000000 ? `${(s.turnover / 100000000).toFixed(2)}亿` : `${(s.turnover / 10000).toFixed(1)}万`) : '0',
+            high: s.high ?? 0,
+            low: s.low ?? 0,
+            open: s.open ?? 0,
+            prevClose: s.prev_close ?? 0,
+            pe: s.pe_dynamic ?? 0,
+            pb: s.pb ?? 0,
+            marketCap: s.total_market_cap ? `${(s.total_market_cap / 100000000).toFixed(1)}亿` : '0',
+            industry: s.exchange === 'SH' ? '沪市主板' : (s.exchange === 'SZ' ? '深市主板' : '北交所'),
+            updatedAt: s.as_of ? new Date(s.as_of).toLocaleTimeString() : '实时行情',
+            market: 'CN',
+            currency: 'CNY',
+          };
+        }
+      } catch (e) {
+        if (RUNTIME_CONFIG.isRealMode) {
+          throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取标的 ${symbol} 的实时行情详情。`);
+        }
+        console.warn('[DEMO MODE] Loading mock stock detail:', e);
       }
-    } catch (e) {
-      if (RUNTIME_CONFIG.isRealMode) {
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取标的 ${symbol} 的实时行情详情。`);
-      }
-      console.warn('[DEMO MODE] Loading mock stock detail:', e);
     }
+
     const all = [...mockIndices, ...mockCNStocks, ...mockUSStocks];
-    return all.find((s) => s.symbol === symbol) || mockCNStocks[0];
+    return all.find((s) => s.symbol === symbol || s.symbol.startsWith(cleanSym)) || mockCNStocks[0];
   },
 
-  async getKLines(symbol: string, period: string = '1M'): Promise<KLinePoint[]> {
+  async getKLines(symbol: string, _period: string = '1M'): Promise<KLinePoint[]> {
+    const cleanSym = symbol.replace(/[^0-9]/g, '').slice(0, 6) || '600519';
     try {
-      const res = await ApiClient.get<{ data: any[] }>(`/bars/${symbol}`, { period, adjust: 'qfq' });
-      if (res && res.data && res.data.length > 0) {
-        return res.data.map((b: any) => ({
-          time: b.date,
-          open: b.open,
-          close: b.close,
-          high: b.high,
-          low: b.low,
-          volume: b.volume,
-          ma5: b.close * 0.995,
-          ma10: b.close * 0.99,
-          ma20: b.close * 0.98,
-        }));
+      const res = await ApiClient.get<any>(`/market/cn/stocks/${cleanSym}/history`, { adjust: 'qfq' });
+      if (res && res.bars && Array.isArray(res.bars) && res.bars.length > 0) {
+        return res.bars.map((b: any, idx: number, arr: any[]) => {
+          const close = b.close ?? 0;
+          // Calculate moving averages if enough historical bars
+          const getMA = (periodCount: number) => {
+            if (idx < periodCount - 1) return close;
+            const slice = arr.slice(idx - periodCount + 1, idx + 1);
+            const sum = slice.reduce((acc, curr) => acc + (curr.close ?? 0), 0);
+            return +(sum / periodCount).toFixed(2);
+          };
+
+          return {
+            time: b.date,
+            open: b.open ?? close,
+            close: close,
+            high: b.high ?? close,
+            low: b.low ?? close,
+            volume: b.volume ?? 0,
+            ma5: getMA(5),
+            ma10: getMA(10),
+            ma20: getMA(20),
+          };
+        });
       }
     } catch (e) {
       if (RUNTIME_CONFIG.isRealMode) {

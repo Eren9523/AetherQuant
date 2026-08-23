@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: aetherquant-quant-service
+    name: penguinquant-quant-service
     env: python
     region: singapore
     plan: free

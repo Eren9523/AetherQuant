@@ -93,7 +93,7 @@ export const InteractiveTerminalDemo: React.FC = () => {
             真实产品终端演示
           </h2>
           <p className="text-sm text-neutral-500 max-w-xl mx-auto">
-            点击标签自由切换或向下滚动，体验 AetherQuant 模块化工作台架构。
+            点击标签自由切换或向下滚动，体验 Penguin Quant 模块化工作台架构。
           </p>
         </div>
 
@@ -130,7 +130,7 @@ export const InteractiveTerminalDemo: React.FC = () => {
               <div className="w-3 h-3 rounded-full bg-amber-400" />
               <div className="w-3 h-3 rounded-full bg-emerald-400" />
               <span className="ml-2 text-xs font-mono font-medium text-neutral-500">
-                AetherQuant Workspace Terminal v2.4 (Mock Node)
+                Penguin Quant Workspace Terminal v2.4 (Mock Node)
               </span>
             </div>
             <button

@@ -1,5 +1,5 @@
 /**
- * AetherQuant Runtime Configuration & Mode Manager
+ * Penguin Quant Runtime Configuration & Mode Manager
  * Modes:
  * - 'real': Strict Production mode. API failures throw real errors. No silent mock fallbacks.
  * - 'demo': Sandbox / Prototype mode with explicit UI 'Demo / 演示数据' badges.

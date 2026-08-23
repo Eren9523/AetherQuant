@@ -1,8 +1,8 @@
-# AetherQuant 存储配额与成本管控白皮书 (Quota & Cost Controls)
+# Penguin Quant 存储配额与成本管控白皮书 (Quota & Cost Controls)
 
 ## 1. 8GB 存储安全熔断策略 (Rule 15-25)
 
-AetherQuant 设置了绝对物理安全上限 **8GB**，按四级状态机实时流转：
+Penguin Quant 设置了绝对物理安全上限 **8GB**，按四级状态机实时流转：
 
 | 状态 | 占用容量 | 系统行为与控制动作 |
 | :--- | :--- | :--- |

@@ -65,7 +65,7 @@ export const NoiseToStructureSection: React.FC = () => {
           <h2 className="text-3xl sm:text-5xl font-extrabold text-neutral-900 tracking-tight leading-tight">
             市场制造噪声。 <br />
             <span className="text-neutral-500 font-light">
-              AetherQuant 负责找到结构。
+              Penguin Quant 负责找到结构。
             </span>
           </h2>
           <p className="text-base text-neutral-600 font-normal">

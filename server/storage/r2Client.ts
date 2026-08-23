@@ -34,7 +34,7 @@ export class R2StorageClient {
   private bucketName: string;
 
   constructor() {
-    this.bucketName = process.env.R2_BUCKET_NAME || 'aetherquant-storage';
+    this.bucketName = process.env.R2_BUCKET_NAME || 'penguinquant-storage';
     this.storageDir = path.join(process.cwd(), '.data', 'r2_storage');
     this.initStorage();
   }

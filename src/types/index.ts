@@ -1,5 +1,5 @@
 /**
- * AetherQuant Type Definitions
+ * Penguin Quant Type Definitions
  */
 
 export type MarketType = 'CN' | 'US';

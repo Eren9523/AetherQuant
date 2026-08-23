@@ -202,7 +202,7 @@ export class PromptRecommendationService {
 
 export class DailyPromptGenerationJob {
   private static readonly SYSTEM_PROMPT = `
-你是 AetherQuant 金融量化研究平台的 AI 推荐引擎。
+你是 Penguin Quant 金融量化研究平台的 AI 推荐引擎。
 你的任务是根据当前真实的市场数据上下文 (DailyMarketContext)，生成精准、前沿、客观、结构化的 50 个量化研究 Prompt。
 
 严禁事项：

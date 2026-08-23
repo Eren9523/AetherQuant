@@ -1,4 +1,4 @@
--- Cloudflare D1 Initial Schema for AetherQuant
+-- Cloudflare D1 Initial Schema for Penguin Quant
 -- Conforms to Rule 11 & Rule 12
 
 -- 1. Users & Sessions

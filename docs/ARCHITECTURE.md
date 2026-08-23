@@ -1,8 +1,8 @@
-# AetherQuant 架构设计文档 (Architecture Document)
+# Penguin Quant 架构设计文档 (Architecture Document)
 
 ## 1. 总体架构拓扑 (Overall Architecture)
 
-AetherQuant 采用现代分层量化系统设计，划分为客户端表现层、边缘与网关路由层、量化核心计算层、以及分布式数据持久化层：
+Penguin Quant 采用现代分层量化系统设计，划分为客户端表现层、边缘与网关路由层、量化核心计算层、以及分布式数据持久化层：
 
 ```
 +-------------------------------------------------------------------------+

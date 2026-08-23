@@ -192,7 +192,7 @@ app.get('/api/v1/health', (c) => {
     success: true,
     data: {
       status: 'ok',
-      service: 'aetherquant-worker',
+      service: 'penguinquant-worker',
       gateway: 'Cloudflare Worker (Hono)',
       timestamp: new Date().toISOString(),
     },
@@ -205,7 +205,7 @@ app.get('/api/health', (c) => {
     success: true,
     data: {
       status: 'ok',
-      service: 'aetherquant-worker',
+      service: 'penguinquant-worker',
       gateway: 'Cloudflare Worker (Hono)',
       timestamp: new Date().toISOString(),
     },
@@ -245,6 +245,157 @@ app.get('/api/v1/system/status', async (c) => {
   };
   return c.json(resData);
 });
+
+// ===================================================================
+// Market Data Endpoints (Python Quant Service Gateway Proxy)
+// ===================================================================
+
+const handleMarketCnSpot = async (c: any) => {
+  const reqId = c.get('requestId');
+  const quantServiceUrl = (c.env.QUANT_SERVICE_URL || '').replace(/\/+$/, '');
+  const quantServiceToken = c.env.QUANT_SERVICE_TOKEN || '';
+
+  if (!quantServiceUrl) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'QUANT_SERVICE_UNAVAILABLE',
+        message: '量化行情微服务未配置 (QUANT_SERVICE_URL 未设置)',
+      },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const symbols = c.req.query('symbols') || '';
+  const fullMarket = c.req.query('full_market') || 'false';
+
+  const queryParams = new URLSearchParams();
+  if (symbols) queryParams.set('symbols', symbols);
+  if (fullMarket) queryParams.set('full_market', fullMarket);
+
+  const targetUrl = `${quantServiceUrl}/v1/market/cn/spot${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${quantServiceToken}`,
+      },
+    });
+
+    const json = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !json || json.success === false) {
+      const errCode = json?.error?.code || 'AKSHARE_UPSTREAM_ERROR';
+      const errMsg = json?.error?.message || `上游行情微服务响应失败 (HTTP ${res.status})`;
+      return c.json(
+        {
+          success: false,
+          error: { code: errCode, message: errMsg },
+          request_id: reqId,
+        },
+        (res.status >= 400 && res.status < 600 ? res.status : 502) as any
+      );
+    }
+
+    return c.json({
+      success: true,
+      data: json.data,
+      request_id: reqId,
+    });
+  } catch (err: any) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'QUANT_SERVICE_UNAVAILABLE',
+          message: `无法连接量化行情服务: ${err.message || '网络无法连通'}`,
+        },
+        request_id: reqId,
+      },
+      502
+    );
+  }
+};
+
+app.get('/api/v1/market/cn/spot', handleMarketCnSpot);
+app.get('/api/market/cn/spot', handleMarketCnSpot);
+
+const handleMarketCnHistory = async (c: any) => {
+  const reqId = c.get('requestId');
+  const quantServiceUrl = (c.env.QUANT_SERVICE_URL || '').replace(/\/+$/, '');
+  const quantServiceToken = c.env.QUANT_SERVICE_TOKEN || '';
+
+  if (!quantServiceUrl) {
+    const errResp: ApiErrorResponse = {
+      success: false,
+      error: {
+        code: 'QUANT_SERVICE_UNAVAILABLE',
+        message: '量化行情微服务未配置 (QUANT_SERVICE_URL 未设置)',
+      },
+      request_id: reqId,
+    };
+    return c.json(errResp, 503);
+  }
+
+  const symbol = c.req.param('symbol') || '';
+  const start = c.req.query('start') || '';
+  const end = c.req.query('end') || '';
+  const adjust = c.req.query('adjust') || 'none';
+
+  const queryParams = new URLSearchParams();
+  if (start) queryParams.set('start', start);
+  if (end) queryParams.set('end', end);
+  if (adjust) queryParams.set('adjust', adjust);
+
+  const targetUrl = `${quantServiceUrl}/v1/market/cn/stocks/${symbol}/history${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+
+  try {
+    const res = await fetch(targetUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${quantServiceToken}`,
+      },
+    });
+
+    const json = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !json || json.success === false) {
+      const errCode = json?.error?.code || 'AKSHARE_UPSTREAM_ERROR';
+      const errMsg = json?.error?.message || `上游历史行情请求失败 (HTTP ${res.status})`;
+      return c.json(
+        {
+          success: false,
+          error: { code: errCode, message: errMsg },
+          request_id: reqId,
+        },
+        (res.status >= 400 && res.status < 600 ? res.status : 502) as any
+      );
+    }
+
+    return c.json({
+      success: true,
+      data: json.data,
+      request_id: reqId,
+    });
+  } catch (err: any) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: 'QUANT_SERVICE_UNAVAILABLE',
+          message: `无法连接量化行情服务: ${err.message || '网络无法连通'}`,
+        },
+        request_id: reqId,
+      },
+      502
+    );
+  }
+};
+
+app.get('/api/v1/market/cn/stocks/:symbol/history', handleMarketCnHistory);
+app.get('/api/market/cn/stocks/:symbol/history', handleMarketCnHistory);
 
 // ===================================================================
 // D1 Authentication & User Management Endpoints
@@ -793,7 +944,7 @@ app.post('/api/v1/ai/chat', async (c) => {
         return c.json(errResp, upstreamRes.status as any);
       }
 
-      // Stream Mode: Transform DeepSeek Provider SSE into AetherQuant Event Contract
+      // Stream Mode: Transform DeepSeek Provider SSE into Penguin Quant Event Contract
       if (isStream && upstreamRes.body) {
         const { readable, writable } = new TransformStream();
         const writer = writable.getWriter();
@@ -893,7 +1044,7 @@ app.post('/api/v1/ai/chat', async (c) => {
     try {
       const ai = new GoogleGenAI({ apiKey: geminiApiKey });
       const systemInstruction =
-        '你是由 AetherQuant 打造的专业级 AI 量化投研智能助手。你精通 A股/美股多因子选股、动量量价评分、财报财务指标拆解、RankIC 因子评估、Black-Litterman 资产配置、CTA 策略与 Python/Backtrader 策略开发。请用结构清晰、条理分明、专业严谨的中文回答用户的量化问题。';
+        '你是由 Penguin Quant 打造的专业级 AI 量化投研智能助手。你精通 A股/美股多因子选股、动量量价评分、财报财务指标拆解、RankIC 因子评估、Black-Litterman 资产配置、CTA 策略与 Python/Backtrader 策略开发。请用结构清晰、条理分明、专业严谨的中文回答用户的量化问题。';
 
       if (isStream) {
         const { readable, writable } = new TransformStream();
@@ -1107,7 +1258,7 @@ app.post('/api/v1/ai/test-connection', async (c) => {
     data: {
       status: 'sandbox_ready',
       channel: 'system',
-      provider: 'aetherquant_gateway',
+      provider: 'penguinquant_gateway',
       model: 'deepseek-chat (沙盒高可用模式)',
       endpoint: 'Cloudflare Encrypted Gateway',
       latency_ms: 65,
@@ -1248,7 +1399,7 @@ app.use('/api/v1/research/*', async (c, next) => {
         `INSERT OR IGNORE INTO users (id, email, name, role, created_at, updated_at) 
          VALUES (?, ?, ?, 'free', datetime('now'), datetime('now'))`
       )
-      .bind(userId, `${userId}@aetherquant.local`, '量化研究员')
+      .bind(userId, `${userId}@penguinquant.local`, '量化研究员')
       .run();
     } catch {
       // Ignore if table doesn't exist or already inserted

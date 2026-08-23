@@ -1,5 +1,5 @@
 """
-AetherQuant Python Quant Service
+Penguin Quant Python Quant Service
 FastAPI backend for AKShare data fetching, factor calculations, backtesting & ML.
 """
 from fastapi import FastAPI, HTTPException, Header, Depends, Query, UploadFile, File
@@ -13,7 +13,7 @@ import numpy as np
 import datetime
 
 app = FastAPI(
-    title="AetherQuant Quant Core Service",
+    title="Penguin Quant Quant Core Service",
     version="1.0.0",
     description="High performance financial data & quantitative analytics engine"
 )
@@ -26,7 +26,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-INTERNAL_TOKEN = os.getenv("QUANT_SERVICE_TOKEN", "aetherquant_internal_dev_token")
+INTERNAL_TOKEN = os.getenv("QUANT_SERVICE_TOKEN", "penguinquant_internal_dev_token")
 
 def verify_token(authorization: Optional[str] = Header(None)):
     if not authorization:
@@ -41,7 +41,7 @@ def verify_token(authorization: Optional[str] = Header(None)):
 def health_check():
     return {
         "status": "healthy",
-        "service": "aetherquant-quant-service",
+        "service": "penguinquant-quant-service",
         "version": "1.0.0",
         "timestamp": datetime.datetime.utcnow().isoformat(),
         "akshare_version": getattr(ak, "__version__", "1.15.50")
