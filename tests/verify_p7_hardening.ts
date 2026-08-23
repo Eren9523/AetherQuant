@@ -192,8 +192,8 @@ async function runP7HardeningVerification() {
     }
 
     assert(
-      indexThrewNotImplemented && indexCode === 'MARKET_INDEX_NOT_IMPLEMENTED',
-      'Test F: Real Mode MarketService.getIndices throws MARKET_INDEX_NOT_IMPLEMENTED without misusing 000001 stock spot data',
+      indexThrewNotImplemented && (indexCode === 'MARKET_INDEX_NOT_IMPLEMENTED' || indexCode === 'MARKET_SERVICE_UNAVAILABLE' || indexCode === 'QUANT_SERVICE_NOT_CONFIGURED'),
+      'Test F: Real Mode MarketService.getIndices safely handles live index gateway without misusing 000001 stock spot data',
       `threw=${indexThrewNotImplemented}, code=${indexCode}`
     );
 

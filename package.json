@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "tsx devServer.ts",
     "dev:worker": "wrangler dev",
-    "d1:migrate:local": "wrangler d1 migrations apply aetherquant-db --local",
-    "d1:migrate:remote": "wrangler d1 migrations apply aetherquant-db --remote",
+    "d1:migrate:local": "wrangler d1 migrations apply penguinquant-db --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply penguinquant-db --remote",
     "dev:legacy": "tsx server.ts",
     "build": "vite build",
     "deploy": "npm run d1:migrate:remote && wrangler deploy",
@@ -25,6 +25,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "hono": "^4.13.2",
+    "lightweight-charts": "^5.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.2.0",

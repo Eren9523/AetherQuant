@@ -3,6 +3,7 @@ import { RUNTIME_CONFIG } from '../config/runtimeConfig';
 import {
   StockQuote,
   KLinePoint,
+  MarketOverviewStats,
   FactorItem,
   DataSourceStatus,
   MLModelExperiment,
@@ -10,6 +11,7 @@ import {
   AutomationTask,
   BacktestResult,
 } from '../types';
+import { calculateIndicators } from '../utils/indicators';
 import { mockIndices, mockCNStocks, mockUSStocks } from '../mocks/mockStocks';
 import { mockFactors } from '../mocks/mockFactors';
 import { mockBacktestResults } from '../mocks/mockBacktests';
@@ -19,62 +21,215 @@ import { mockAutomationTasks } from '../mocks/mockTasks';
 import { mockMLModels } from '../mocks/mockMLModels';
 
 // ==========================================
-// 1. Market Service
+// 1. Market Service (AetherQuant Real Market Engine)
 // ==========================================
+export interface GetStocksParams {
+  market?: 'CN' | 'US' | 'ALL';
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  exchange?: 'SH' | 'SZ' | 'BJ' | string;
+  symbols?: string;
+}
+
+export interface GetStocksResult {
+  stocks: StockQuote[];
+  total: number;
+  page: number;
+  pageSize: number;
+  asOf: string;
+  cached?: boolean;
+}
+
 export const MarketService = {
+  /**
+   * Fetches real major market indices (上证指数, 深证成指, 创业板指, 沪深300).
+   */
   async getIndices(): Promise<StockQuote[]> {
     if (RUNTIME_CONFIG.isRealMode) {
-      throw new ApiError('MARKET_INDEX_NOT_IMPLEMENTED', '大盘指数实时行情接口暂未接入 (MARKET_INDEX_NOT_IMPLEMENTED)。');
+      try {
+        const res = await ApiClient.get<any>('/market/cn/indices');
+        const rawList = res?.indices || res?.data?.indices || (Array.isArray(res) ? res : res?.data);
+        if (rawList && Array.isArray(rawList) && rawList.length > 0) {
+          return rawList.map((idx: any) => ({
+            symbol: idx.symbol,
+            name: idx.name,
+            price: idx.last ?? idx.price ?? 0,
+            change: idx.change ?? 0,
+            changePercent: idx.change_pct ?? idx.changePercent ?? 0,
+            volume: idx.volume ? (idx.volume >= 10000 ? `${(idx.volume / 10000).toFixed(1)}万` : idx.volume.toString()) : '0',
+            turnover: idx.turnover ? (idx.turnover >= 100000000 ? `${(idx.turnover / 100000000).toFixed(2)}亿` : `${(idx.turnover / 10000).toFixed(1)}万`) : '0',
+            rawVolume: idx.volume ?? 0,
+            rawTurnover: idx.turnover ?? 0,
+            high: idx.high ?? idx.last ?? 0,
+            low: idx.low ?? idx.last ?? 0,
+            open: idx.open ?? idx.last ?? 0,
+            prevClose: idx.prev_close ?? idx.prevClose ?? idx.last ?? 0,
+            pe: 0,
+            pb: 0,
+            marketCap: idx.turnover ? `成交 ${idx.turnover >= 100000000 ? (idx.turnover / 100000000).toFixed(1) + '亿' : (idx.turnover / 10000).toFixed(1) + '万'}` : '0',
+            industry: '市场核心指数',
+            updatedAt: idx.as_of ? new Date(idx.as_of).toLocaleTimeString() : '实时指数',
+            market: 'CN' as const,
+            currency: 'CNY' as const,
+            source: 'AKShare (EastMoney)',
+          }));
+        }
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '主要指数服务暂无实时数据');
+      } catch (e: any) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法连接大盘指数服务: ${e.message || '网络连接失败'}`);
+      }
     }
     return mockIndices;
   },
 
-  async getStocks(market: 'CN' | 'US' | 'ALL' = 'ALL'): Promise<StockQuote[]> {
+  /**
+   * Fetches real market breadth overview (up/down count, total turnover, limit up/down).
+   */
+  async getMarketOverview(): Promise<MarketOverviewStats> {
     if (RUNTIME_CONFIG.isRealMode) {
-      if (market === 'US') {
-        throw new ApiError('MARKET_NOT_IMPLEMENTED', '美股市场行情数据暂未接入 (MARKET_NOT_IMPLEMENTED)。');
-      }
-      if (market === 'ALL') {
-        throw new ApiError('MARKET_NOT_IMPLEMENTED', '多市场聚合行情接口暂未开放美股数据 (MARKET_NOT_IMPLEMENTED)，请切换至 A股(CN) 市场。');
-      }
-      // CN market
       try {
-        const res = await ApiClient.get<any>('/market/cn/spot');
-        if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
-          return res.stocks.map((s: any) => ({
+        const res = await ApiClient.get<any>('/market/cn/overview');
+        const ov = res?.data || res;
+        if (ov) {
+          return {
+            upCount: ov.up_count ?? ov.upCount ?? 0,
+            downCount: ov.down_count ?? ov.downCount ?? 0,
+            flatCount: ov.flat_count ?? ov.flatCount ?? 0,
+            limitUpCount: ov.limit_up_count ?? ov.limitUpCount ?? 0,
+            limitDownCount: ov.limit_down_count ?? ov.limitDownCount ?? 0,
+            totalTurnover: ov.total_turnover ?? ov.totalTurnover ?? 0,
+            avgChangePct: ov.avg_change_pct ?? ov.avgChangePct ?? 0,
+            totalCount: ov.total_count ?? ov.totalCount ?? 0,
+            asOf: ov.as_of || ov.asOf || new Date().toISOString(),
+          };
+        }
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '全市场统计指标暂未就绪');
+      } catch (e: any) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取全市场统计数据: ${e.message || '网络错误'}`);
+      }
+    }
+
+    // Mock Overview fallback
+    return {
+      upCount: 3420,
+      downCount: 1580,
+      flatCount: 210,
+      limitUpCount: 48,
+      limitDownCount: 12,
+      totalTurnover: 980000000000,
+      avgChangePct: 0.85,
+      totalCount: 5210,
+      asOf: new Date().toISOString(),
+    };
+  },
+
+  /**
+   * Fetches paginated, searchable, sortable list of real A-share stocks.
+   */
+  async getStocks(params: GetStocksParams | string = {}): Promise<GetStocksResult> {
+    const opts: GetStocksParams = typeof params === 'string' ? { market: params as any } : params;
+    const {
+      market = 'CN',
+      page = 1,
+      pageSize = 50,
+      search,
+      sortBy = 'change_pct',
+      sortOrder = 'desc',
+      exchange,
+      symbols,
+    } = opts;
+
+    if (RUNTIME_CONFIG.isRealMode) {
+      if (market === 'US' || market === 'ALL') {
+        throw new ApiError('MARKET_NOT_IMPLEMENTED', '美股或跨市场行情接口暂未接入 (MARKET_NOT_IMPLEMENTED)，当前量化通道仅支持 A股(CN) 真实市场。');
+      }
+
+      try {
+        const query: Record<string, any> = {
+          page,
+          page_size: pageSize,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        };
+        if (search && search.trim()) query.search = search.trim();
+        if (exchange && exchange !== 'ALL') query.exchange = exchange;
+        if (symbols && symbols.trim()) query.symbols = symbols.trim();
+
+        const res = await ApiClient.get<any>('/market/cn/spot', query);
+        const rawStocks = res?.stocks ?? res?.data?.stocks ?? res?.items ?? res?.results ?? (Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : undefined));
+
+        if (Array.isArray(rawStocks)) {
+          const stocks: StockQuote[] = rawStocks.map((s: any) => ({
             symbol: s.symbol,
-            name: s.name,
-            price: s.last ?? 0,
+            name: s.name || s.symbol,
+            price: s.last ?? s.price ?? 0,
             change: s.change ?? 0,
-            changePercent: s.change_pct ?? 0,
+            changePercent: s.change_pct ?? s.changePercent ?? 0,
             volume: s.volume ? (s.volume >= 10000 ? `${(s.volume / 10000).toFixed(1)}万` : s.volume.toString()) : '0',
             turnover: s.turnover ? (s.turnover >= 100000000 ? `${(s.turnover / 100000000).toFixed(2)}亿` : `${(s.turnover / 10000).toFixed(1)}万`) : '0',
-            high: s.high ?? 0,
-            low: s.low ?? 0,
-            open: s.open ?? 0,
-            prevClose: s.prev_close ?? 0,
-            pe: s.pe_dynamic ?? 0,
+            rawVolume: s.volume ?? 0,
+            rawTurnover: s.turnover ?? 0,
+            high: s.high ?? s.last ?? s.price ?? 0,
+            low: s.low ?? s.last ?? s.price ?? 0,
+            open: s.open ?? s.last ?? s.price ?? 0,
+            prevClose: s.prev_close ?? s.prevClose ?? s.last ?? s.price ?? 0,
+            pe: s.pe_dynamic ?? s.pe ?? 0,
             pb: s.pb ?? 0,
-            marketCap: s.total_market_cap ? `${(s.total_market_cap / 100000000).toFixed(1)}亿` : '0',
-            industry: s.exchange === 'SH' ? '沪市主板' : (s.exchange === 'SZ' ? '深市主板' : '北交所'),
+            turnoverRate: s.turnover_rate ?? s.turnoverRate ?? 0,
+            amplitude: s.amplitude ?? 0,
+            marketCap: s.total_market_cap ? `${(s.total_market_cap / 100000000).toFixed(1)}亿` : (s.marketCap || '0'),
+            floatMarketCap: s.float_market_cap ? `${(s.float_market_cap / 100000000).toFixed(1)}亿` : undefined,
+            exchange: s.exchange || (s.symbol?.startsWith('6') ? 'SH' : (s.symbol?.startsWith('8') ? 'BJ' : 'SZ')),
+            industry: s.exchange === 'SH' ? '沪市主板' : (s.exchange === 'SZ' ? '深市主板' : (s.exchange === 'BJ' ? '北交所' : 'A股')),
             updatedAt: s.as_of ? new Date(s.as_of).toLocaleTimeString() : '实时行情',
             market: 'CN' as const,
             currency: 'CNY' as const,
+            source: 'AKShare (EastMoney)',
           }));
+
+          return {
+            stocks,
+            total: res?.total ?? res?.data?.total ?? stocks.length,
+            page: res?.page ?? res?.data?.page ?? page,
+            pageSize: res?.page_size ?? res?.data?.page_size ?? pageSize,
+            asOf: res?.as_of || res?.data?.as_of || new Date().toISOString(),
+            cached: res?.cached ?? res?.data?.cached,
+          };
         }
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '量化行情服务返回空列表 (MARKET_SERVICE_UNAVAILABLE)。');
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '量化行情服务返回格式异常');
       } catch (e: any) {
         if (e instanceof ApiError) throw e;
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法连接到量化行情服务: ${e.message || '网络连接失败'}`);
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法连接量化行情服务: ${e.message || '网络连接失败'}`);
       }
     }
 
     // Demo Mode fallback
-    if (market === 'CN') return mockCNStocks;
-    if (market === 'US') return mockUSStocks;
-    return [...mockCNStocks, ...mockUSStocks];
+    let all = market === 'US' ? mockUSStocks : (market === 'CN' ? mockCNStocks : [...mockCNStocks, ...mockUSStocks]);
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      all = all.filter(s => s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || s.industry.toLowerCase().includes(q));
+    }
+    const startIdx = (page - 1) * pageSize;
+    const paged = all.slice(startIdx, startIdx + pageSize);
+
+    return {
+      stocks: paged,
+      total: all.length,
+      page,
+      pageSize,
+      asOf: new Date().toISOString(),
+      cached: false,
+    };
   },
 
+  /**
+   * Fetches real quote + basic company info for a single stock.
+   */
   async getStockDetail(symbol: string): Promise<StockQuote | undefined> {
     const cleanSym = (symbol || '').replace(/[^0-9]/g, '').slice(0, 6);
     if (RUNTIME_CONFIG.isRealMode) {
@@ -82,31 +237,40 @@ export const MarketService = {
         throw new ApiError('INVALID_SYMBOL', `股票代码格式错误 [${symbol}]，必须为 6 位数字代码`);
       }
       try {
-        const res = await ApiClient.get<any>('/market/cn/spot', { symbols: cleanSym });
-        if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
-          const s = res.stocks[0];
+        const res = await ApiClient.get<any>(`/market/cn/stocks/${cleanSym}`);
+        const s = res?.quote || res?.data?.quote || res;
+        const basic = res?.basic_info || res?.data?.basic_info || {};
+
+        if (s && (s.symbol || s.last !== undefined || s.price !== undefined)) {
           return {
-            symbol: s.symbol,
-            name: s.name,
-            price: s.last ?? 0,
+            symbol: s.symbol || cleanSym,
+            name: s.name || basic.name || cleanSym,
+            price: s.last ?? s.price ?? 0,
             change: s.change ?? 0,
-            changePercent: s.change_pct ?? 0,
+            changePercent: s.change_pct ?? s.changePercent ?? 0,
             volume: s.volume ? (s.volume >= 10000 ? `${(s.volume / 10000).toFixed(1)}万` : s.volume.toString()) : '0',
             turnover: s.turnover ? (s.turnover >= 100000000 ? `${(s.turnover / 100000000).toFixed(2)}亿` : `${(s.turnover / 10000).toFixed(1)}万`) : '0',
-            high: s.high ?? 0,
-            low: s.low ?? 0,
-            open: s.open ?? 0,
-            prevClose: s.prev_close ?? 0,
-            pe: s.pe_dynamic ?? 0,
+            rawVolume: s.volume ?? 0,
+            rawTurnover: s.turnover ?? 0,
+            high: s.high ?? s.last ?? 0,
+            low: s.low ?? s.last ?? 0,
+            open: s.open ?? s.last ?? 0,
+            prevClose: s.prev_close ?? s.prevClose ?? s.last ?? 0,
+            pe: s.pe_dynamic ?? s.pe ?? 0,
             pb: s.pb ?? 0,
-            marketCap: s.total_market_cap ? `${(s.total_market_cap / 100000000).toFixed(1)}亿` : '0',
-            industry: s.exchange === 'SH' ? '沪市主板' : (s.exchange === 'SZ' ? '深市主板' : '北交所'),
+            turnoverRate: s.turnover_rate ?? s.turnoverRate ?? 0,
+            amplitude: s.amplitude ?? 0,
+            marketCap: (s.total_market_cap || basic.total_market_cap) ? `${((s.total_market_cap || basic.total_market_cap) / 100000000).toFixed(1)}亿` : '0',
+            floatMarketCap: (s.float_market_cap || basic.float_market_cap) ? `${((s.float_market_cap || basic.float_market_cap) / 100000000).toFixed(1)}亿` : undefined,
+            exchange: s.exchange,
+            industry: basic.industry || (s.exchange === 'SH' ? '沪市主板' : (s.exchange === 'SZ' ? '深市主板' : (s.exchange === 'BJ' ? '北交所' : 'A股'))),
             updatedAt: s.as_of ? new Date(s.as_of).toLocaleTimeString() : '实时行情',
-            market: 'CN',
-            currency: 'CNY',
+            market: 'CN' as const,
+            currency: 'CNY' as const,
+            source: 'AKShare (EastMoney)',
           };
         }
-        throw new ApiError('NOT_FOUND', `未查询到标的 ${cleanSym} 的实时行情详情`);
+        throw new ApiError('NOT_FOUND', `未查询到标的 [${cleanSym}] 的实时行情详情`);
       } catch (e: any) {
         if (e instanceof ApiError) throw e;
         throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取标的 ${symbol} 的行情详情: ${e.message || '上游服务无响应'}`);
@@ -118,47 +282,68 @@ export const MarketService = {
     return all.find((s) => s.symbol === symbol || (cleanSym && s.symbol.startsWith(cleanSym))) || mockCNStocks[0];
   },
 
-  async getKLines(symbol: string, _period: string = '1M'): Promise<KLinePoint[]> {
+  /**
+   * Fetches real K-line bars for specified interval & adjustment mode,
+   * calculates all technical indicators (MA, EMA, BOLL, MACD, RSI, KDJ) client-side.
+   */
+  async getChartData(
+    symbol: string,
+    interval: string = '1d',
+    adjust: 'none' | 'qfq' | 'hfq' = 'qfq'
+  ): Promise<{ bars: KLinePoint[]; count: number; asOf: string; qualityWarnings: number }> {
     const cleanSym = (symbol || '').replace(/[^0-9]/g, '').slice(0, 6);
     if (RUNTIME_CONFIG.isRealMode) {
       if (cleanSym.length !== 6) {
-        throw new ApiError('INVALID_SYMBOL', `股票代码格式错误 [${symbol}]，无法获取历史 K 线`);
+        throw new ApiError('INVALID_SYMBOL', `股票代码格式错误 [${symbol}]，必须为 6 位数字代码`);
       }
-      try {
-        const res = await ApiClient.get<any>(`/market/cn/stocks/${cleanSym}/history`, { adjust: 'qfq' });
-        if (res && res.bars && Array.isArray(res.bars) && res.bars.length > 0) {
-          return res.bars.map((b: any, idx: number, arr: any[]) => {
-            const close = b.close ?? 0;
-            // Calculate moving averages if enough historical bars
-            const getMA = (periodCount: number) => {
-              if (idx < periodCount - 1) return close;
-              const slice = arr.slice(idx - periodCount + 1, idx + 1);
-              const sum = slice.reduce((acc, curr) => acc + (curr.close ?? 0), 0);
-              return +(sum / periodCount).toFixed(2);
-            };
 
-            return {
-              time: b.date,
-              open: b.open ?? close,
-              close: close,
-              high: b.high ?? close,
-              low: b.low ?? close,
-              volume: b.volume ?? 0,
-              ma5: getMA(5),
-              ma10: getMA(10),
-              ma20: getMA(20),
-            };
-          });
+      try {
+        const res = await ApiClient.get<any>(`/market/cn/stocks/${cleanSym}/chart`, {
+          interval,
+          adjust,
+        });
+
+        const rawList = res?.bars || res?.data?.bars || (Array.isArray(res) ? res : res?.data);
+
+        if (rawList && Array.isArray(rawList)) {
+          const rawBars = rawList.map((b: any) => ({
+            time: b.time || b.date,
+            open: b.open ?? 0,
+            high: b.high ?? 0,
+            low: b.low ?? 0,
+            close: b.close ?? 0,
+            volume: b.volume ?? 0,
+            turnover: b.turnover ?? b.amount ?? 0,
+            changePct: b.change_pct ?? b.changePct ?? 0,
+            turnoverRate: b.turnover_rate ?? b.turnoverRate ?? 0,
+          }));
+
+          const enrichedBars = calculateIndicators(rawBars);
+
+          return {
+            bars: enrichedBars,
+            count: res.count ?? res.data?.count ?? enrichedBars.length,
+            asOf: res.as_of || res.data?.as_of || new Date().toISOString(),
+            qualityWarnings: res.quality_warnings_count ?? res.data?.quality_warnings_count ?? 0,
+          };
         }
-        return [];
+        return { bars: [], count: 0, asOf: new Date().toISOString(), qualityWarnings: 0 };
       } catch (e: any) {
         if (e instanceof ApiError) throw e;
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取 ${symbol} 的 K 线数据: ${e.message || '行情服务未响应'}`);
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取 ${symbol} 的 K 线走势: ${e.message || '服务异常'}`);
       }
     }
 
-    // Demo Mode
-    return [];
+    // Demo Mode fallback
+    return { bars: [], count: 0, asOf: new Date().toISOString(), qualityWarnings: 0 };
+  },
+
+  /**
+   * Compatibility wrapper for existing getKLines calls
+   */
+  async getKLines(symbol: string, period: string = '1d'): Promise<KLinePoint[]> {
+    const res = await this.getChartData(symbol, period, 'qfq');
+    return res.bars;
   },
 
   async getOrderBook(symbol: string) {
@@ -293,7 +478,7 @@ export const DataCenterService = {
       if (res && Array.isArray(res) && res.length > 0) return res;
     } catch (e) {
       if (RUNTIME_CONFIG.isRealMode) {
-        throw new ApiError('SERVICE_NOT_IMPLEMENTED', '数据源管理将在 P6 阶段全面接入真 R2 存储。');
+        throw new ApiError('SERVICE_NOT_IMPLEMENTED', '数据源管理将在真 R2 存储阶段接入。');
       }
     }
     return mockDataSources;
@@ -325,7 +510,7 @@ export const DataCenterService = {
 
   async parseUploadedFile(fileName: string) {
     if (RUNTIME_CONFIG.isRealMode) {
-      throw new ApiError('SERVICE_NOT_IMPLEMENTED', '文档与数据集解析服务将在 P6 (真 R2 存储) 阶段上线。');
+      throw new ApiError('SERVICE_NOT_IMPLEMENTED', '文档与数据集解析服务将在真 R2 存储阶段上线。');
     }
     return new Promise((resolve) => {
       setTimeout(() => {
@@ -433,7 +618,7 @@ export const MLLabService = {
 };
 
 // ==========================================
-// 7. Research & DeepSeek AI Service
+// 7. Research & AI Service
 // ==========================================
 export const ResearchService = {
   async getThreads(search?: string, limit: number = 20) {
@@ -535,7 +720,7 @@ export const ResearchService = {
       text: data.text,
       usage: data.usage,
       model: data.model,
-      steps: ['连通行情图谱与特征工程', 'DeepSeek 深度量化推理'],
+      steps: ['连通行情图谱与特征工程', 'AetherQuant AI 深度量化推理'],
     };
   },
 
@@ -560,7 +745,6 @@ export const ResearchService = {
       }
       return fullText;
     } catch (err: any) {
-      // Note: ApiClient.postStream has already called onError once. Do not call it again here.
       throw err;
     }
   },

@@ -1,6 +1,6 @@
 {
-  "name": "Penguin Quant - AI量化研究平台",
-  "description": "面向 A 股、美股市场的 AI 原生量化研究、策略验证、数据分析与交易平台",
+  "name": "AetherQuant - AI量化投研平台",
+  "description": "面向 A 股市场的 AI 原生量化投研、实时行情分析、技术指标与策略终端",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

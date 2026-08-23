@@ -1,0 +1,21 @@
+# ====================================================
+# Render Blueprint for AetherQuant Python Quant Service
+# ====================================================
+
+services:
+  - type: web
+    name: aetherquant-service
+    env: python
+    region: oregon
+    plan: starter
+    rootDir: quant-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: QUANT_SERVICE_TOKEN
+        generateValue: true
+      - key: LOG_LEVEL
+        value: info

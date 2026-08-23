@@ -77,7 +77,122 @@ apiRouter.get('/usage', async (req: Request, res: Response) => {
   });
 });
 
-// 3. Markets & Instruments
+// Helper: Proxy to external Python Quant Service or fallback to built-in live market provider
+async function handleQuantOrLocal(req: Request, targetPath: string, fallbackFn: () => Promise<any>) {
+  const quantUrl = process.env.QUANT_SERVICE_URL;
+  const quantToken = process.env.QUANT_SERVICE_TOKEN;
+
+  if (quantUrl && quantToken) {
+    try {
+      const urlObj = new URL(targetPath.startsWith('/') ? targetPath : `/${targetPath}`, quantUrl);
+      Object.entries(req.query).forEach(([k, v]) => {
+        if (typeof v === 'string') urlObj.searchParams.set(k, v);
+      });
+
+      const response = await fetch(urlObj.toString(), {
+        headers: {
+          Authorization: `Bearer ${quantToken}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch (e) {
+      console.warn(`[Proxy] Forwarding to Quant Service ${targetPath} failed, using local provider:`, e);
+    }
+  }
+
+  // Fallback to built-in real data provider
+  const data = await fallbackFn();
+  return {
+    success: true,
+    data,
+    request_id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+  };
+}
+
+// 3. Markets & Instruments (Real A-Share Quant APIs)
+apiRouter.get(['/market/cn/spot', '/v1/market/cn/spot'], async (req: Request, res: Response) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.page_size as string || req.query.pageSize as string) || 50;
+    const search = (req.query.search as string) || '';
+    const sortBy = (req.query.sort_by as string || req.query.sortBy as string) || 'change_pct';
+    const sortOrder = ((req.query.sort_order as string || req.query.sortOrder as string) || 'desc') as 'asc' | 'desc';
+    const exchange = (req.query.exchange as string) || undefined;
+    const symbols = (req.query.symbols as string) || undefined;
+
+    const result = await handleQuantOrLocal(req, '/v1/market/cn/spot', async () => {
+      return await marketProvider.getSpotList({
+        page,
+        pageSize,
+        search,
+        sortBy,
+        sortOrder,
+        exchange,
+        symbols,
+      });
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取A股行情失败' } });
+  }
+});
+
+apiRouter.get(['/market/cn/indices', '/v1/market/cn/indices'], async (req: Request, res: Response) => {
+  try {
+    const result = await handleQuantOrLocal(req, '/v1/market/cn/indices', async () => {
+      return await marketProvider.getIndices();
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取大盘指数失败' } });
+  }
+});
+
+apiRouter.get(['/market/cn/overview', '/v1/market/cn/overview'], async (req: Request, res: Response) => {
+  try {
+    const result = await handleQuantOrLocal(req, '/v1/market/cn/overview', async () => {
+      return await marketProvider.getMarketBreadthOverview();
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取市场全景失败' } });
+  }
+});
+
+apiRouter.get(['/market/cn/stocks/:symbol/chart', '/v1/market/cn/stocks/:symbol/chart', '/market/cn/stocks/:symbol/history', '/v1/market/cn/stocks/:symbol/history', '/market/cn/stocks/:symbol/minute', '/v1/market/cn/stocks/:symbol/minute'], async (req: Request, res: Response) => {
+  try {
+    const symbol = req.params.symbol;
+    const interval = (req.query.interval as string) || (req.path.includes('minute') ? '1m' : '1d');
+    const adjust = (req.query.adjust as string) || 'qfq';
+
+    const result = await handleQuantOrLocal(req, `/v1/market/cn/stocks/${symbol}/chart`, async () => {
+      return await marketProvider.getStockChart(symbol, interval, adjust);
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取标的图表数据失败' } });
+  }
+});
+
+apiRouter.get(['/market/cn/stocks/:symbol', '/v1/market/cn/stocks/:symbol', '/market/cn/stocks/:symbol/detail', '/v1/market/cn/stocks/:symbol/detail', '/market/cn/stocks/:symbol/quote', '/v1/market/cn/stocks/:symbol/quote'], async (req: Request, res: Response) => {
+  try {
+    const symbol = req.params.symbol;
+    const result = await handleQuantOrLocal(req, `/v1/market/cn/stocks/${symbol}`, async () => {
+      return await marketProvider.getStockDetail(symbol);
+    });
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取标的详情失败' } });
+  }
+});
+
+// Legacy Market endpoints
 apiRouter.get('/markets/overview', async (req: Request, res: Response) => {
   const overview = await marketProvider.getMarketOverview();
   res.json(overview);

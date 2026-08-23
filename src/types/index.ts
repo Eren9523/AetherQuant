@@ -12,18 +12,37 @@ export interface StockQuote {
   change: number;
   changePercent: number;
   market: MarketType;
+  exchange?: string;
   currency: 'CNY' | 'USD';
   volume: string;
   turnover: string;
+  rawVolume?: number;
+  rawTurnover?: number;
   high: number;
   low: number;
   open: number;
   prevClose: number;
   pe: number;
   pb: number;
+  turnoverRate?: number;
+  amplitude?: number;
   marketCap: string;
+  floatMarketCap?: string;
   industry: string;
   updatedAt: string;
+  source?: string;
+}
+
+export interface MarketOverviewStats {
+  upCount: number;
+  downCount: number;
+  flatCount: number;
+  limitUpCount: number;
+  limitDownCount: number;
+  totalTurnover: number;
+  avgChangePct: number;
+  totalCount: number;
+  asOf: string;
 }
 
 export interface KLinePoint {
@@ -33,9 +52,26 @@ export interface KLinePoint {
   low: number;
   close: number;
   volume: number;
+  turnover?: number;
+  changePct?: number;
+  turnoverRate?: number;
   ma5?: number;
+  ma10?: number;
   ma20?: number;
   ma60?: number;
+  ema12?: number;
+  ema26?: number;
+  bollUpper?: number;
+  bollMid?: number;
+  bollLower?: number;
+  macd?: number;
+  macdSignal?: number;
+  macdHist?: number;
+  rsi6?: number;
+  rsi12?: number;
+  kdjK?: number;
+  kdjD?: number;
+  kdjJ?: number;
 }
 
 export interface FactorItem {
