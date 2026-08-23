@@ -10,8 +10,8 @@ class Settings:
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
     
-    # Internal Auth Token
-    QUANT_SERVICE_TOKEN: str = os.getenv("QUANT_SERVICE_TOKEN", "penguinquant_internal_dev_token")
+    # Internal Auth Token (Must be loaded from environment only)
+    QUANT_SERVICE_TOKEN: Optional[str] = os.getenv("QUANT_SERVICE_TOKEN")
     
     # Cache TTL Configurations (Seconds)
     SPOT_CACHE_TTL_SECONDS: int = int(os.getenv("SPOT_CACHE_TTL_SECONDS", "20"))

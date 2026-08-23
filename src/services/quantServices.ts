@@ -23,45 +23,25 @@ import { mockMLModels } from '../mocks/mockMLModels';
 // ==========================================
 export const MarketService = {
   async getIndices(): Promise<StockQuote[]> {
-    try {
-      const res = await ApiClient.get<any>('/market/cn/spot', { symbols: '000001,399001,399006,000300' });
-      if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
-        return res.stocks.map((s: any) => ({
-          symbol: s.symbol,
-          name: s.name,
-          price: s.last ?? 0,
-          change: s.change ?? 0,
-          changePercent: s.change_pct ?? 0,
-          volume: s.volume ? (s.volume >= 10000 ? `${(s.volume / 10000).toFixed(1)}万` : s.volume.toString()) : '0',
-          turnover: s.turnover ? (s.turnover >= 100000000 ? `${(s.turnover / 100000000).toFixed(2)}亿` : `${(s.turnover / 10000).toFixed(1)}万`) : '0',
-          high: s.high ?? 0,
-          low: s.low ?? 0,
-          open: s.open ?? 0,
-          prevClose: s.prev_close ?? 0,
-          pe: s.pe_dynamic ?? 0,
-          pb: s.pb ?? 0,
-          marketCap: s.total_market_cap ? `${(s.total_market_cap / 100000000).toFixed(1)}亿` : '0',
-          industry: s.exchange === 'SH' ? '上海主板' : (s.exchange === 'SZ' ? '深圳主板' : '北交所'),
-          updatedAt: s.as_of ? new Date(s.as_of).toLocaleTimeString() : '实时行情',
-          market: 'CN',
-          currency: 'CNY',
-        }));
-      }
-    } catch (e) {
-      if (RUNTIME_CONFIG.isRealMode) {
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '无法获取实时大盘指数行情，行情服务未就绪。');
-      }
-      console.warn('[DEMO MODE] Loading mock indices:', e);
+    if (RUNTIME_CONFIG.isRealMode) {
+      throw new ApiError('MARKET_INDEX_NOT_IMPLEMENTED', '大盘指数实时行情接口暂未接入 (MARKET_INDEX_NOT_IMPLEMENTED)。');
     }
     return mockIndices;
   },
 
   async getStocks(market: 'CN' | 'US' | 'ALL' = 'ALL'): Promise<StockQuote[]> {
-    try {
-      if (market === 'CN' || market === 'ALL') {
+    if (RUNTIME_CONFIG.isRealMode) {
+      if (market === 'US') {
+        throw new ApiError('MARKET_NOT_IMPLEMENTED', '美股市场行情数据暂未接入 (MARKET_NOT_IMPLEMENTED)。');
+      }
+      if (market === 'ALL') {
+        throw new ApiError('MARKET_NOT_IMPLEMENTED', '多市场聚合行情接口暂未开放美股数据 (MARKET_NOT_IMPLEMENTED)，请切换至 A股(CN) 市场。');
+      }
+      // CN market
+      try {
         const res = await ApiClient.get<any>('/market/cn/spot');
         if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
-          const cnStocks: StockQuote[] = res.stocks.map((s: any) => ({
+          return res.stocks.map((s: any) => ({
             symbol: s.symbol,
             name: s.name,
             price: s.last ?? 0,
@@ -81,26 +61,26 @@ export const MarketService = {
             market: 'CN' as const,
             currency: 'CNY' as const,
           }));
-
-          if (market === 'CN') return cnStocks;
-          return [...cnStocks, ...mockUSStocks];
         }
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '量化行情服务返回空列表 (MARKET_SERVICE_UNAVAILABLE)。');
+      } catch (e: any) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法连接到量化行情服务: ${e.message || '网络连接失败'}`);
       }
-    } catch (e) {
-      if (RUNTIME_CONFIG.isRealMode) {
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', '无法连接到量化行情服务 (MARKET_SERVICE_UNAVAILABLE)。');
-      }
-      console.warn('[DEMO MODE] Loading mock stocks:', e);
     }
 
+    // Demo Mode fallback
     if (market === 'CN') return mockCNStocks;
     if (market === 'US') return mockUSStocks;
     return [...mockCNStocks, ...mockUSStocks];
   },
 
   async getStockDetail(symbol: string): Promise<StockQuote | undefined> {
-    const cleanSym = symbol.replace(/[^0-9]/g, '').slice(0, 6);
-    if (cleanSym.length === 6) {
+    const cleanSym = (symbol || '').replace(/[^0-9]/g, '').slice(0, 6);
+    if (RUNTIME_CONFIG.isRealMode) {
+      if (cleanSym.length !== 6) {
+        throw new ApiError('INVALID_SYMBOL', `股票代码格式错误 [${symbol}]，必须为 6 位数字代码`);
+      }
       try {
         const res = await ApiClient.get<any>('/market/cn/spot', { symbols: cleanSym });
         if (res && res.stocks && Array.isArray(res.stocks) && res.stocks.length > 0) {
@@ -126,52 +106,58 @@ export const MarketService = {
             currency: 'CNY',
           };
         }
-      } catch (e) {
-        if (RUNTIME_CONFIG.isRealMode) {
-          throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取标的 ${symbol} 的实时行情详情。`);
-        }
-        console.warn('[DEMO MODE] Loading mock stock detail:', e);
+        throw new ApiError('NOT_FOUND', `未查询到标的 ${cleanSym} 的实时行情详情`);
+      } catch (e: any) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取标的 ${symbol} 的行情详情: ${e.message || '上游服务无响应'}`);
       }
     }
 
+    // Demo Mode fallback
     const all = [...mockIndices, ...mockCNStocks, ...mockUSStocks];
-    return all.find((s) => s.symbol === symbol || s.symbol.startsWith(cleanSym)) || mockCNStocks[0];
+    return all.find((s) => s.symbol === symbol || (cleanSym && s.symbol.startsWith(cleanSym))) || mockCNStocks[0];
   },
 
   async getKLines(symbol: string, _period: string = '1M'): Promise<KLinePoint[]> {
-    const cleanSym = symbol.replace(/[^0-9]/g, '').slice(0, 6) || '600519';
-    try {
-      const res = await ApiClient.get<any>(`/market/cn/stocks/${cleanSym}/history`, { adjust: 'qfq' });
-      if (res && res.bars && Array.isArray(res.bars) && res.bars.length > 0) {
-        return res.bars.map((b: any, idx: number, arr: any[]) => {
-          const close = b.close ?? 0;
-          // Calculate moving averages if enough historical bars
-          const getMA = (periodCount: number) => {
-            if (idx < periodCount - 1) return close;
-            const slice = arr.slice(idx - periodCount + 1, idx + 1);
-            const sum = slice.reduce((acc, curr) => acc + (curr.close ?? 0), 0);
-            return +(sum / periodCount).toFixed(2);
-          };
+    const cleanSym = (symbol || '').replace(/[^0-9]/g, '').slice(0, 6);
+    if (RUNTIME_CONFIG.isRealMode) {
+      if (cleanSym.length !== 6) {
+        throw new ApiError('INVALID_SYMBOL', `股票代码格式错误 [${symbol}]，无法获取历史 K 线`);
+      }
+      try {
+        const res = await ApiClient.get<any>(`/market/cn/stocks/${cleanSym}/history`, { adjust: 'qfq' });
+        if (res && res.bars && Array.isArray(res.bars) && res.bars.length > 0) {
+          return res.bars.map((b: any, idx: number, arr: any[]) => {
+            const close = b.close ?? 0;
+            // Calculate moving averages if enough historical bars
+            const getMA = (periodCount: number) => {
+              if (idx < periodCount - 1) return close;
+              const slice = arr.slice(idx - periodCount + 1, idx + 1);
+              const sum = slice.reduce((acc, curr) => acc + (curr.close ?? 0), 0);
+              return +(sum / periodCount).toFixed(2);
+            };
 
-          return {
-            time: b.date,
-            open: b.open ?? close,
-            close: close,
-            high: b.high ?? close,
-            low: b.low ?? close,
-            volume: b.volume ?? 0,
-            ma5: getMA(5),
-            ma10: getMA(10),
-            ma20: getMA(20),
-          };
-        });
+            return {
+              time: b.date,
+              open: b.open ?? close,
+              close: close,
+              high: b.high ?? close,
+              low: b.low ?? close,
+              volume: b.volume ?? 0,
+              ma5: getMA(5),
+              ma10: getMA(10),
+              ma20: getMA(20),
+            };
+          });
+        }
+        return [];
+      } catch (e: any) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取 ${symbol} 的 K 线数据: ${e.message || '行情服务未响应'}`);
       }
-    } catch (e) {
-      if (RUNTIME_CONFIG.isRealMode) {
-        throw new ApiError('MARKET_SERVICE_UNAVAILABLE', `无法获取 ${symbol} 的 K 线数据，行情上游无响应。`);
-      }
-      console.warn('[DEMO MODE] Loading mock KLines:', e);
     }
+
+    // Demo Mode
     return [];
   },
 

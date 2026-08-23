@@ -6,7 +6,6 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.api.market import router as market_router
@@ -37,15 +36,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS Policy
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Global Exception Handlers conforming to AetherQuant error schema
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -74,7 +64,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
-    logger.error("Unhandled exception: %s", str(exc), exc_info=True)
+    logger.exception("Unhandled exception in Quant Service: %s", exc)
     return JSONResponse(
         status_code=500,
         content={

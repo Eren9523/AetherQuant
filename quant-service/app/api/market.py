@@ -3,6 +3,8 @@ Market Data API Router
 FastAPI Endpoints for CN Market Spot & History
 """
 import re
+import secrets
+import logging
 import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Header, HTTPException, Query, Path, Depends
@@ -19,12 +21,21 @@ from app.schemas.market import (
     ApiErrorDetail
 )
 
+logger = logging.getLogger("market_api")
 router = APIRouter()
 
 def verify_quant_token(authorization: Optional[str] = Header(None)) -> str:
     """
-    Validates internal service Bearer token.
+    Validates internal service Bearer token using constant-time comparison.
+    If QUANT_SERVICE_TOKEN is not configured on server, returns 503 QUANT_AUTH_NOT_CONFIGURED.
     """
+    expected_token = settings.QUANT_SERVICE_TOKEN
+    if not expected_token or not expected_token.strip():
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "QUANT_AUTH_NOT_CONFIGURED", "message": "Quant Service 鉴权密钥未在服务端配置 (QUANT_SERVICE_TOKEN 未设置)"}
+        )
+
     if not authorization:
         raise HTTPException(
             status_code=401,
@@ -39,10 +50,7 @@ def verify_quant_token(authorization: Optional[str] = Header(None)) -> str:
         )
     
     token = parts[1].strip()
-    expected_token = settings.QUANT_SERVICE_TOKEN.strip()
-    
-    # If expected_token is set, strictly match
-    if expected_token and token != expected_token:
+    if not secrets.compare_digest(token, expected_token.strip()):
         raise HTTPException(
             status_code=401,
             detail={"code": "QUANT_AUTH_INVALID", "message": "Quant Service 鉴权 Token 校验失败"}
@@ -56,10 +64,12 @@ def health_check():
     Health check probe for Quant Service & AKShare status.
     Unauthenticated.
     """
+    ak_ver = AKShareProvider.get_version()
+    status = "healthy" if ak_ver not in ("not_installed", "unknown") else "unavailable"
     return HealthResponseData(
         service=settings.SERVICE_NAME,
-        status="healthy",
-        akshare_version=AKShareProvider.get_version(),
+        status=status,
+        akshare_version=ak_ver,
         timestamp=datetime.datetime.utcnow().isoformat() + "Z"
     )
 
@@ -97,10 +107,11 @@ def get_cn_spot_market(
             status_code=502 if e.code == "AKSHARE_UPSTREAM_ERROR" else 404,
             content={"success": False, "error": {"code": e.code, "message": e.message}}
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("Unexpected error in get_cn_spot_market")
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": {"code": "INTERNAL_SERVER_ERROR", "message": str(e)}}
+            content={"success": False, "error": {"code": "INTERNAL_SERVER_ERROR", "message": "量化行情服务内部异常"}}
         )
 
 @router.get("/v1/market/cn/stocks/{symbol}/history", response_model=ApiResponse[HistoryResponseData])
@@ -179,8 +190,9 @@ def get_cn_stock_history(
             status_code=502 if e.code == "AKSHARE_UPSTREAM_ERROR" else 404,
             content={"success": False, "error": {"code": e.code, "message": e.message}}
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("Unexpected error in get_cn_stock_history for %s", symbol)
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": {"code": "INTERNAL_SERVER_ERROR", "message": str(e)}}
+            content={"success": False, "error": {"code": "INTERNAL_SERVER_ERROR", "message": "量化行情服务内部异常"}}
         )

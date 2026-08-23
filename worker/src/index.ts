@@ -30,7 +30,8 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
 
 /**
  * Unified Origin Resolution Service for CORS & CSRF
- * Strict Whitelist Policy supporting configured production domains, localhost, and preview platforms.
+ * Strict Whitelist Policy: only allows exact APP_ORIGIN, exact ALLOWED_ORIGINS list, same-origin, and local development origins.
+ * Platform wildcards (*.pages.dev, *.workers.dev, *.run.app, etc.) are strictly prohibited.
  */
 export function isAllowedOrigin(origin: string | undefined | null, env: Bindings, requestUrl?: string): boolean {
   if (!origin) return false;
@@ -68,25 +69,6 @@ export function isAllowedOrigin(origin: string | undefined | null, env: Bindings
   if (devOrigins.includes(origin)) {
     return true;
   }
-
-  // 5. Cloud Run / AI Studio / Cloudflare platform origins
-  try {
-    const parsed = new URL(origin);
-    const host = parsed.hostname.toLowerCase();
-    if (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host.endsWith('.run.app') ||
-      host.endsWith('.pages.dev') ||
-      host.endsWith('.workers.dev') ||
-      host === 'ai.studio' ||
-      host.endsWith('.ai.studio') ||
-      host.endsWith('.google.com') ||
-      host.endsWith('.googleusercontent.com')
-    ) {
-      return true;
-    }
-  } catch {}
 
   return false;
 }
@@ -253,14 +235,14 @@ app.get('/api/v1/system/status', async (c) => {
 const handleMarketCnSpot = async (c: any) => {
   const reqId = c.get('requestId');
   const quantServiceUrl = (c.env.QUANT_SERVICE_URL || '').replace(/\/+$/, '');
-  const quantServiceToken = c.env.QUANT_SERVICE_TOKEN || '';
+  const quantServiceToken = (c.env.QUANT_SERVICE_TOKEN || '').trim();
 
-  if (!quantServiceUrl) {
+  if (!quantServiceUrl || !quantServiceToken) {
     const errResp: ApiErrorResponse = {
       success: false,
       error: {
-        code: 'QUANT_SERVICE_UNAVAILABLE',
-        message: '量化行情微服务未配置 (QUANT_SERVICE_URL 未设置)',
+        code: 'QUANT_SERVICE_NOT_CONFIGURED',
+        message: '量化行情微服务未配置 (QUANT_SERVICE_URL 或 QUANT_SERVICE_TOKEN 未设置)',
       },
       request_id: reqId,
     };
@@ -325,14 +307,14 @@ app.get('/api/market/cn/spot', handleMarketCnSpot);
 const handleMarketCnHistory = async (c: any) => {
   const reqId = c.get('requestId');
   const quantServiceUrl = (c.env.QUANT_SERVICE_URL || '').replace(/\/+$/, '');
-  const quantServiceToken = c.env.QUANT_SERVICE_TOKEN || '';
+  const quantServiceToken = (c.env.QUANT_SERVICE_TOKEN || '').trim();
 
-  if (!quantServiceUrl) {
+  if (!quantServiceUrl || !quantServiceToken) {
     const errResp: ApiErrorResponse = {
       success: false,
       error: {
-        code: 'QUANT_SERVICE_UNAVAILABLE',
-        message: '量化行情微服务未配置 (QUANT_SERVICE_URL 未设置)',
+        code: 'QUANT_SERVICE_NOT_CONFIGURED',
+        message: '量化行情微服务未配置 (QUANT_SERVICE_URL 或 QUANT_SERVICE_TOKEN 未设置)',
       },
       request_id: reqId,
     };
