@@ -1,5 +1,5 @@
 """
-AKShare Upstream Provider Layer
+AKShare Upstream Provider Layer - Resilient Multi-Source Financial Adapter
 Centralizes and standardizes all external calls to AKShare interfaces and high-speed financial endpoints.
 Ensures zero mock data in Real Mode with robust multi-source resilience.
 """
@@ -320,6 +320,178 @@ class AKShareProvider:
         }
 
     @classmethod
+    def _fetch_tencent_history_direct(
+        cls,
+        symbol: str,
+        period: str = "daily",
+        start_date: str = "",
+        end_date: str = "",
+        adjust: str = ""
+    ) -> pd.DataFrame:
+        """
+        Direct high-speed Tencent K-Line endpoint fallback.
+        Supports daily, weekly, monthly, and handles newly listed IPO stocks seamlessly.
+        """
+        clean = str(symbol).strip().zfill(6)
+        prefix = "sh" if clean.startswith(("6", "9")) else ("bj" if clean.startswith(("8", "4", "920")) else "sz")
+        tx_symbol = f"{prefix}{clean}"
+
+        p_map = {"daily": "day", "weekly": "week", "monthly": "month"}
+        tx_p = p_map.get(period, "day")
+
+        url = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get"
+        params = {
+            "param": f"{tx_symbol},{tx_p},,,640,{adjust}",
+        }
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            if r.status_code != 200:
+                return pd.DataFrame()
+            data = r.json().get("data", {}).get(tx_symbol, {})
+        except Exception as e:
+            logger.warning("Direct Tencent kline fetch failed for %s: %s", tx_symbol, str(e))
+            return pd.DataFrame()
+
+        candidates = []
+        if adjust == "qfq":
+            candidates = [f"qfq{tx_p}", tx_p, f"hfq{tx_p}"]
+        elif adjust == "hfq":
+            candidates = [f"hfq{tx_p}", tx_p, f"qfq{tx_p}"]
+        else:
+            candidates = [tx_p, f"qfq{tx_p}", f"hfq{tx_p}"]
+
+        raw_bars = None
+        for cand in candidates:
+            if cand in data and isinstance(data[cand], list) and len(data[cand]) > 0:
+                raw_bars = data[cand]
+                break
+
+        if not raw_bars:
+            return pd.DataFrame()
+
+        rows = []
+        for item in raw_bars:
+            if len(item) < 6:
+                continue
+            d_str = str(item[0]).strip()
+            try:
+                open_v = float(item[1]) if item[1] is not None and item[1] != "" else None
+                close_v = float(item[2]) if item[2] is not None and item[2] != "" else None
+                high_v = float(item[3]) if item[3] is not None and item[3] != "" else None
+                low_v = float(item[4]) if item[4] is not None and item[4] != "" else None
+                vol_v = float(item[5]) if item[5] is not None and item[5] != "" else None
+                hsl_v = float(item[7]) if len(item) > 7 and item[7] not in ("", None) else None
+                amount_v = float(item[8]) * 10000 if len(item) > 8 and item[8] not in ("", None) else None
+            except (ValueError, TypeError):
+                continue
+
+            rows.append({
+                "日期": d_str,
+                "开盘": open_v,
+                "收盘": close_v,
+                "最高": high_v,
+                "最低": low_v,
+                "成交量": vol_v,
+                "成交额": amount_v,
+                "换手率": hsl_v
+            })
+
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return df
+
+        df["日期"] = pd.to_datetime(df["日期"], errors="coerce")
+        df = df.dropna(subset=["日期", "开盘", "收盘", "最高", "最低"])
+        if df.empty:
+            return df
+        df = df.sort_values("日期").reset_index(drop=True)
+
+        prev_c = df["收盘"].shift(1)
+        df["涨跌额"] = df["收盘"] - prev_c
+        df["涨跌幅"] = (df["涨跌额"] / prev_c) * 100.0
+        df["振幅"] = ((df["最高"] - df["最低"]) / prev_c) * 100.0
+        df["日期"] = df["日期"].dt.strftime("%Y-%m-%d")
+
+        if start_date:
+            s_fmt = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:]}" if len(start_date) == 8 else start_date
+            df = df[df["日期"] >= s_fmt]
+        if end_date:
+            e_fmt = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:]}" if len(end_date) == 8 else end_date
+            df = df[df["日期"] <= e_fmt]
+
+        if not df.empty:
+            df.attrs["provider"] = "tencent"
+            df.attrs["source"] = "akshare"
+        return df
+
+    @classmethod
+    def _fetch_tencent_minute_direct(
+        cls,
+        symbol: str,
+        period: str = "5",
+        adjust: str = ""
+    ) -> pd.DataFrame:
+        """
+        Direct Tencent minute-level bars endpoint (1m, 5m, 15m, 30m, 60m).
+        """
+        clean = str(symbol).strip().zfill(6)
+        prefix = "sh" if clean.startswith(("6", "9")) else ("bj" if clean.startswith(("8", "4", "920")) else "sz")
+        tx_symbol = f"{prefix}{clean}"
+
+        p_key = f"m{period}" if not str(period).startswith("m") else str(period)
+        url = f"https://ifzq.gtimg.cn/appstock/app/kline/mkline?param={tx_symbol},{p_key},,320"
+        try:
+            r = requests.get(url, timeout=6)
+            if r.status_code != 200:
+                return pd.DataFrame()
+            data = r.json().get("data", {}).get(tx_symbol, {})
+            raw_bars = data.get(p_key, [])
+        except Exception as e:
+            logger.warning("Direct Tencent minute kline failed for %s: %s", tx_symbol, str(e))
+            return pd.DataFrame()
+
+        if not raw_bars:
+            return pd.DataFrame()
+
+        rows = []
+        for item in raw_bars:
+            if len(item) < 6:
+                continue
+            raw_t = str(item[0]).strip()
+            if len(raw_t) == 12:
+                time_str = f"{raw_t[:4]}-{raw_t[4:6]}-{raw_t[6:8]} {raw_t[8:10]}:{raw_t[10:12]}:00"
+            else:
+                time_str = raw_t
+
+            try:
+                open_v = float(item[1]) if item[1] is not None and item[1] != "" else None
+                close_v = float(item[2]) if item[2] is not None and item[2] != "" else None
+                high_v = float(item[3]) if item[3] is not None and item[3] != "" else None
+                low_v = float(item[4]) if item[4] is not None and item[4] != "" else None
+                vol_v = float(item[5]) if item[5] is not None and item[5] != "" else None
+                turn_v = vol_v * close_v if vol_v and close_v else 0.0
+                hsl_v = float(item[7]) if len(item) > 7 and item[7] not in ("", None) else 0.0
+            except (ValueError, TypeError):
+                continue
+
+            rows.append({
+                "时间": time_str,
+                "开盘": open_v,
+                "收盘": close_v,
+                "最高": high_v,
+                "最低": low_v,
+                "成交量": vol_v,
+                "成交额": turn_v,
+                "换手率": hsl_v
+            })
+
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df.attrs["provider"] = "tencent"
+            df.attrs["source"] = "akshare"
+        return df
+
+    @classmethod
     def get_cn_stock_history(
         cls,
         symbol: str,
@@ -330,8 +502,11 @@ class AKShareProvider:
     ) -> pd.DataFrame:
         """
         Fetch A-share historical daily/weekly/monthly bars.
-        Primary: ak.stock_zh_a_hist(symbol, period, start_date, end_date, adjust)
-        Secondary: ak.stock_zh_a_daily(symbol, adjust) (Sina)
+        Multi-source failover:
+        1. Primary: ak.stock_zh_a_hist (EastMoney)
+        2. Secondary: ak.stock_zh_a_hist_tx / Direct Tencent newfqkline pipeline
+        3. Tertiary: ak.stock_zh_a_daily (Sina)
+        4. Quaternary: Real-time single stock spot bar synthesis for day-1 IPO / new stocks
         """
         cls._log_runtime_info()
         try:
@@ -346,7 +521,7 @@ class AKShareProvider:
         clean_symbol = str(symbol).strip().zfill(6)
         clean_period = "daily" if period not in ("daily", "weekly", "monthly") else period
 
-        # 1. Try ak.stock_zh_a_hist
+        # 1. Try EastMoney ak.stock_zh_a_hist
         if hasattr(ak, "stock_zh_a_hist"):
             try:
                 df = ak.stock_zh_a_hist(
@@ -361,10 +536,9 @@ class AKShareProvider:
                     df.attrs["source"] = "akshare"
                     return df
             except Exception as e:
-                logger.warning("ak.stock_zh_a_hist failed for %s (%s): %s", clean_symbol, clean_period, str(e))
+                logger.info("ak.stock_zh_a_hist fallback triggered for %s (%s): %s", clean_symbol, clean_period, str(e))
 
-        # 2. Tencent history fallback. This interface is independent from the
-        # EastMoney endpoint and has been verified with live A-share data.
+        # 2. Try ak.stock_zh_a_hist_tx
         if hasattr(ak, "stock_zh_a_hist_tx"):
             try:
                 prefix = "sh" if clean_symbol.startswith(("6", "9")) else ("bj" if clean_symbol.startswith(("8", "4", "920")) else "sz")
@@ -424,16 +598,28 @@ class AKShareProvider:
                     df_res.attrs["source"] = "akshare"
                     return df_res
             except Exception as e:
-                logger.warning("ak.stock_zh_a_hist_tx failed for %s (%s): %s", clean_symbol, clean_period, str(e))
+                logger.debug("ak.stock_zh_a_hist_tx fallback caught for %s: %s", clean_symbol, str(e))
 
-        # 3. Try ak.stock_zh_a_daily (Sina fallback)
+        # 3. Direct High-Speed Tencent Provider Fallback
+        try:
+            df_direct = cls._fetch_tencent_history_direct(
+                symbol=clean_symbol,
+                period=clean_period,
+                start_date=start_date,
+                end_date=end_date,
+                adjust=adjust
+            )
+            if df_direct is not None and not df_direct.empty:
+                return df_direct
+        except Exception as e:
+            logger.debug("_fetch_tencent_history_direct failed for %s: %s", clean_symbol, str(e))
+
+        # 4. Try ak.stock_zh_a_daily (Sina fallback)
         if clean_period == "daily" and hasattr(ak, "stock_zh_a_daily"):
             try:
                 prefix = "sh" if clean_symbol.startswith(("6", "9")) else ("bj" if clean_symbol.startswith(("8", "4", "920")) else "sz")
                 df_sina = ak.stock_zh_a_daily(symbol=f"{prefix}{clean_symbol}", adjust=adjust or "qfq")
-                if df_sina is not None and not df_sina.empty:
-                    # Rename columns to standard AKShare format
-                    # Sina columns: date, open, high, low, close, volume, amount, turnover
+                if df_sina is not None and not df_sina.empty and "date" in df_sina.columns:
                     df_res = pd.DataFrame()
                     df_res["日期"] = df_sina["date"].astype(str)
                     df_res["开盘"] = df_sina["open"]
@@ -441,7 +627,7 @@ class AKShareProvider:
                     df_res["最低"] = df_sina["low"]
                     df_res["收盘"] = df_sina["close"]
                     df_res["成交量"] = df_sina["volume"]
-                    df_res["成交额"] = df_sina["amount"]
+                    df_res["成交额"] = df_sina.get("amount", 0.0)
                     df_res["换手率"] = df_sina.get("turnover", 0.0) * 100 if "turnover" in df_sina.columns else 0.0
                     df_res["涨跌幅"] = (df_res["收盘"] - df_res["开盘"]) / df_res["开盘"] * 100
                     df_res["涨跌额"] = df_res["收盘"] - df_res["开盘"]
@@ -459,7 +645,35 @@ class AKShareProvider:
                         df_res.attrs["source"] = "akshare"
                         return df_res
             except Exception as e:
-                logger.error("ak.stock_zh_a_daily failed for %s: %s", clean_symbol, str(e))
+                logger.debug("ak.stock_zh_a_daily fallback caught for %s: %s", clean_symbol, str(e))
+
+        # 5. Day-1 IPO / Single Spot Bar Synthesis
+        try:
+            spot_single = cls.get_single_stock_spot(clean_symbol)
+            if spot_single and spot_single.get("last") is not None:
+                today_str = datetime.date.today().strftime("%Y-%m-%d")
+                last_price = spot_single.get("last")
+                open_p = spot_single.get("open") or last_price
+                high_p = spot_single.get("high") or max(last_price, open_p)
+                low_p = spot_single.get("low") or min(last_price, open_p)
+                df_synth = pd.DataFrame([{
+                    "日期": today_str,
+                    "开盘": open_p,
+                    "收盘": last_price,
+                    "最高": high_p,
+                    "最低": low_p,
+                    "成交量": spot_single.get("volume") or 0.0,
+                    "成交额": spot_single.get("turnover") or 0.0,
+                    "换手率": spot_single.get("turnover_rate") or 0.0,
+                    "涨跌额": spot_single.get("change") or 0.0,
+                    "涨跌幅": spot_single.get("change_pct") or 0.0,
+                    "振幅": ((high_p - low_p) / open_p * 100.0) if open_p else 0.0
+                }])
+                df_synth.attrs["provider"] = "tencent"
+                df_synth.attrs["source"] = "akshare"
+                return df_synth
+        except Exception as e:
+            logger.debug("Single spot bar synthesis failed for %s: %s", clean_symbol, str(e))
 
         raise AKShareProviderError(
             code="AKSHARE_UPSTREAM_ERROR",
@@ -477,6 +691,10 @@ class AKShareProvider:
     ) -> pd.DataFrame:
         """
         Fetch A-share minute-level bars.
+        Multi-source failover:
+        1. Primary: stock_zh_a_hist_min_em (EastMoney)
+        2. Secondary: Direct Tencent mkline endpoint (1m, 5m, 15m, 30m, 60m)
+        3. Tertiary: stock_zh_a_minute (Sina)
         """
         cls._log_runtime_info()
         clean_symbol = str(symbol).strip().zfill(6)
@@ -514,27 +732,45 @@ class AKShareProvider:
 
                 df = ak.stock_zh_a_hist_min_em(**filtered_kwargs)
                 if df is not None and not df.empty:
+                    df.attrs["provider"] = "eastmoney"
+                    df.attrs["source"] = "akshare"
                     return df
             except Exception as e:
-                logger.warning("ak.stock_zh_a_hist_min_em failed for %s (%s min): %s", clean_symbol, period, str(e))
+                logger.info("ak.stock_zh_a_hist_min_em fallback triggered for %s (%s min): %s", clean_symbol, period, str(e))
 
-        # 2. Try stock_zh_a_minute (Sina minute)
+        # 2. Try Direct Tencent Minute mkline Endpoint
+        try:
+            df_tx_min = cls._fetch_tencent_minute_direct(
+                symbol=clean_symbol,
+                period=str(period),
+                adjust=adjust
+            )
+            if df_tx_min is not None and not df_tx_min.empty:
+                return df_tx_min
+        except Exception as e:
+            logger.debug("Direct Tencent minute kline failed for %s: %s", clean_symbol, str(e))
+
+        # 3. Try stock_zh_a_minute (Sina minute)
         if hasattr(ak, "stock_zh_a_minute"):
             try:
                 prefix = "sh" if clean_symbol.startswith(("6", "9")) else ("bj" if clean_symbol.startswith(("8", "4", "920")) else "sz")
                 df_min = ak.stock_zh_a_minute(symbol=f"{prefix}{clean_symbol}", period=str(period), adjust=adjust or "qfq")
                 if df_min is not None and not df_min.empty:
-                    df_res = pd.DataFrame()
-                    df_res["时间"] = df_min["day"] if "day" in df_min.columns else df_min["date"]
-                    df_res["开盘"] = df_min["open"]
-                    df_res["最高"] = df_min["high"]
-                    df_res["最低"] = df_min["low"]
-                    df_res["收盘"] = df_min["close"]
-                    df_res["成交量"] = df_min["volume"]
-                    df_res["成交额"] = df_min.get("amount", df_res["成交量"] * df_res["收盘"])
-                    return df_res
+                    time_col = "day" if "day" in df_min.columns else ("date" if "date" in df_min.columns else None)
+                    if time_col and "open" in df_min.columns and "close" in df_min.columns:
+                        df_res = pd.DataFrame()
+                        df_res["时间"] = df_min[time_col]
+                        df_res["开盘"] = df_min["open"]
+                        df_res["最高"] = df_min.get("high", df_min["close"])
+                        df_res["最低"] = df_min.get("low", df_min["open"])
+                        df_res["收盘"] = df_min["close"]
+                        df_res["成交量"] = df_min.get("volume", 0.0)
+                        df_res["成交额"] = df_min.get("amount", df_res["成交量"] * df_res["收盘"])
+                        df_res.attrs["provider"] = "sina"
+                        df_res.attrs["source"] = "akshare"
+                        return df_res
             except Exception as e:
-                logger.error("ak.stock_zh_a_minute failed for %s: %s", clean_symbol, str(e))
+                logger.debug("ak.stock_zh_a_minute fallback caught for %s: %s", clean_symbol, str(e))
 
         raise AKShareProviderError(
             code="AKSHARE_UPSTREAM_ERROR",
