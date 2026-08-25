@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.providers.akshare_provider import AKShareProvider, AKShareProviderError
 from app.services.market_service import market_service
+from app.services.snapshot_service import snapshot_service, SnapshotValidationError
 from app.schemas.market import (
     ApiResponse,
     SpotResponseData,
@@ -436,3 +437,28 @@ def get_cn_stock_chart(
             status_code=500,
             content={"success": False, "error": {"code": "INTERNAL_SERVER_ERROR", "message": "量化行情服务内部异常"}}
         )
+
+@router.get("/v1/internal/market/cn/snapshot")
+def get_internal_cn_snapshot(
+    _token: str = Depends(verify_quant_token)
+):
+    """
+    Internal high-throughput full market snapshot endpoint.
+    Used exclusively by Cloudflare Worker Scheduled Sync.
+    Requires valid QUANT_SERVICE_TOKEN.
+    """
+    try:
+        data = snapshot_service.build_internal_snapshot()
+        return ApiResponse(success=True, data=data)
+    except SnapshotValidationError as e:
+        return JSONResponse(
+            status_code=422,
+            content={"success": False, "error": {"code": e.code, "message": e.message}}
+        )
+    except Exception as e:
+        logger.exception("Unexpected error in get_internal_cn_snapshot")
+        return JSONResponse(
+            status_code=502,
+            content={"success": False, "error": {"code": "AKSHARE_UPSTREAM_ERROR", "message": f"行情上游采集失败: {str(e)}"}}
+        )
+

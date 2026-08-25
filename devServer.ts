@@ -7,6 +7,7 @@
  * For official Workerd integration, use `npm run dev:worker` (wrangler dev).
  */
 import { createServer as createHttpServer } from 'http';
+import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
@@ -31,7 +32,66 @@ const MIME_TYPES: Record<string, string> = {
   '.js': 'application/javascript',
 };
 
+async function ensureQuantServiceRunning() {
+  try {
+    const res = await fetch('http://127.0.0.1:8001/health', { signal: AbortSignal.timeout(1000) });
+    if (res.ok) {
+      console.log('[DevServer] Python Quant Service is already active on 127.0.0.1:8001');
+      return;
+    }
+  } catch {}
+
+  console.log('[DevServer] Launching Python Quant Service on 127.0.0.1:8001...');
+  const pythonProc = spawn(
+    'python3',
+    [
+      '-c',
+      "import uvicorn, sys, os; sys.path.insert(0, os.path.abspath('quant-service')); uvicorn.run('app.main:app', host='127.0.0.1', port=8001, reload=False)",
+    ],
+    {
+      env: {
+        ...process.env,
+        QUANT_SERVICE_TOKEN: process.env.QUANT_SERVICE_TOKEN || 'local-dev-quant-token-2026',
+      },
+      stdio: 'inherit',
+      detached: false,
+    }
+  );
+
+  pythonProc.on('error', (err) => {
+    console.error('[DevServer] Could not spawn Python Quant Service:', err);
+  });
+}
+
+async function applyD1Migrations(db: any) {
+  if (!db) return;
+  const migrationsDir = path.join(process.cwd(), 'worker', 'migrations');
+  if (!fs.existsSync(migrationsDir)) return;
+  const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+  for (const file of files) {
+    const fullPath = path.join(migrationsDir, file);
+    const sql = fs.readFileSync(fullPath, 'utf8');
+    try {
+      if (typeof db.exec === 'function') {
+        await db.exec(sql);
+      } else {
+        const statements = sql
+          .split(';')
+          .map(s => s.trim())
+          .filter(s => s.length > 0 && !s.startsWith('--'));
+        for (const stmt of statements) {
+          await db.prepare(stmt).run();
+        }
+      }
+      console.log(`[D1 Migration] Applied ${file} successfully.`);
+    } catch (err: any) {
+      console.warn(`[D1 Migration] Notice for ${file}:`, err?.message || err);
+    }
+  }
+}
+
 async function startWorkerDevServer() {
+  await ensureQuantServiceRunning();
   const PORT = 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
@@ -42,6 +102,9 @@ async function startWorkerDevServer() {
       configPath: './wrangler.jsonc',
     });
     console.log('[Wrangler Platform Proxy] Initialized local D1 & R2 bindings via root wrangler.jsonc.');
+    if (platformProxy?.env?.DB) {
+      await applyD1Migrations(platformProxy.env.DB);
+    }
   } catch (err) {
     console.warn('[Wrangler Platform Proxy] Warning: Could not initialize platform proxy, falling back:', err);
   }
@@ -64,8 +127,8 @@ async function startWorkerDevServer() {
       DEEPSEEK_BASE_URL: process.env.DEEPSEEK_BASE_URL || platformProxy?.env?.DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
       DEEPSEEK_MODEL: process.env.DEEPSEEK_MODEL || platformProxy?.env?.DEEPSEEK_MODEL || 'deepseek-chat',
       GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-      QUANT_SERVICE_URL: process.env.QUANT_SERVICE_URL || '',
-      QUANT_SERVICE_TOKEN: process.env.QUANT_SERVICE_TOKEN || '',
+      QUANT_SERVICE_URL: process.env.QUANT_SERVICE_URL || platformProxy?.env?.QUANT_SERVICE_URL || 'http://127.0.0.1:8001',
+      QUANT_SERVICE_TOKEN: process.env.QUANT_SERVICE_TOKEN || platformProxy?.env?.QUANT_SERVICE_TOKEN || 'local-dev-quant-token-2026',
       APP_ORIGIN: process.env.APP_ORIGIN || '',
       ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || '',
     };

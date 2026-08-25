@@ -30,6 +30,13 @@
   ],
   "vars": {
     "DEEPSEEK_BASE_URL": "https://api.deepseek.com",
-    "DEEPSEEK_MODEL": "deepseek-chat"
+    "DEEPSEEK_MODEL": "deepseek-chat",
+    "MARKET_SYNC_ENABLED": "true",
+    "MARKET_MIN_STOCK_COUNT": "4000"
+  },
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
   }
 }

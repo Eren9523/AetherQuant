@@ -54,7 +54,7 @@ export const PenguinLogo: React.FC<PenguinLogoProps> = ({
         <span
           className={`font-bold tracking-tight text-neutral-900 font-sans leading-none ${config.text} ${textClassName}`}
         >
-          Aether<span className="font-light text-neutral-500">Quant</span>
+          Penguin<span className="font-light text-neutral-500">Quant</span>
         </span>
       )}
     </div>

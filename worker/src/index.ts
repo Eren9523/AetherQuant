@@ -5,17 +5,20 @@ import type { ApiErrorResponse, ApiSuccessResponse } from './types/api';
 import { ResearchThreadRepository } from './repositories/researchThreadRepository';
 import { ResearchMessageRepository } from './repositories/researchMessageRepository';
 import { WorkerAuthService } from './services/authService';
-import { MarketDataProvider } from '../../server/market/marketDataProvider';
 
 export type Bindings = {
   DB: D1Database;
   DATA_BUCKET: R2Bucket;
+  BUCKET?: R2Bucket;
   DEEPSEEK_API_KEY?: string;
   DEEPSEEK_BASE_URL?: string;
   DEEPSEEK_MODEL?: string;
   GEMINI_API_KEY?: string;
   QUANT_SERVICE_URL?: string;
   QUANT_SERVICE_TOKEN?: string;
+  MARKET_SYNC_TOKEN?: string;
+  MARKET_SYNC_ENABLED?: string;
+  MARKET_MIN_STOCK_COUNT?: string;
   APP_ORIGIN?: string;
   ALLOWED_ORIGINS?: string;
   ASSETS?: Fetcher;
@@ -196,208 +199,13 @@ app.get('/api/health', (c) => {
   });
 });
 
-// ===================================================================
-// Market & Instruments Data Service (Real A-Share Live Feed & Quant Proxy)
-// ===================================================================
-const marketProvider = new MarketDataProvider();
+import { createMarketRouter } from './market/marketRoutes';
+import { MarketSyncService } from './market/marketSyncService';
 
-async function handleQuantOrLocalWorker(c: any, targetPath: string, fallbackFn: () => Promise<any>) {
-  const quantUrl = c.env.QUANT_SERVICE_URL;
-  const quantToken = c.env.QUANT_SERVICE_TOKEN;
-
-  if (quantUrl && quantToken) {
-    try {
-      const urlObj = new URL(targetPath.startsWith('/') ? targetPath : `/${targetPath}`, quantUrl);
-      const queryParams = c.req.query();
-      Object.entries(queryParams).forEach(([k, v]) => {
-        if (typeof v === 'string') urlObj.searchParams.set(k, v);
-      });
-
-      const response = await fetch(urlObj.toString(), {
-        headers: {
-          Authorization: `Bearer ${quantToken}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(4000),
-      });
-
-      if (response.ok) {
-        return await response.json();
-      }
-    } catch (e) {
-      console.warn(`[Worker Proxy] Forwarding to Quant Service ${targetPath} failed, using local provider:`, e);
-    }
-  }
-
-  // Fallback to built-in real data provider
-  const data = await fallbackFn();
-  return {
-    success: true,
-    data,
-    request_id: c.get('requestId'),
-  };
-}
-
-// 1. Spot Market Table
-const handleMarketCnSpot = async (c: any) => {
-  try {
-    const page = parseInt(c.req.query('page') || '1', 10);
-    const pageSize = parseInt(c.req.query('page_size') || c.req.query('pageSize') || '50', 10);
-    const search = c.req.query('search') || '';
-    const sortBy = c.req.query('sort_by') || c.req.query('sortBy') || 'change_pct';
-    const sortOrder = (c.req.query('sort_order') || c.req.query('sortOrder') || 'desc') as 'asc' | 'desc';
-    const exchange = c.req.query('exchange') || undefined;
-    const symbols = c.req.query('symbols') || undefined;
-
-    const result = await handleQuantOrLocalWorker(c, '/v1/market/cn/spot', async () => {
-      return await marketProvider.getSpotList({
-        page,
-        pageSize,
-        search,
-        sortBy,
-        sortOrder,
-        exchange,
-        symbols,
-      });
-    });
-
-    return c.json(result);
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取A股行情失败' },
-      request_id: c.get('requestId'),
-    }, 500);
-  }
-};
-
-app.get('/api/v1/market/cn/spot', handleMarketCnSpot);
-app.get('/api/market/cn/spot', handleMarketCnSpot);
-
-// 2. Indices
-const handleMarketCnIndices = async (c: any) => {
-  try {
-    const result = await handleQuantOrLocalWorker(c, '/v1/market/cn/indices', async () => {
-      return await marketProvider.getIndices();
-    });
-    return c.json(result);
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取大盘指数失败' },
-      request_id: c.get('requestId'),
-    }, 500);
-  }
-};
-
-app.get('/api/v1/market/cn/indices', handleMarketCnIndices);
-app.get('/api/market/cn/indices', handleMarketCnIndices);
-
-// 3. Market Breadth Overview
-const handleMarketCnOverview = async (c: any) => {
-  try {
-    const result = await handleQuantOrLocalWorker(c, '/v1/market/cn/overview', async () => {
-      return await marketProvider.getMarketBreadthOverview();
-    });
-    return c.json(result);
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取市场全景失败' },
-      request_id: c.get('requestId'),
-    }, 500);
-  }
-};
-
-app.get('/api/v1/market/cn/overview', handleMarketCnOverview);
-app.get('/api/market/cn/overview', handleMarketCnOverview);
-
-// 4. Stock Chart & K-line History
-const handleMarketCnChart = async (c: any) => {
-  try {
-    const symbol = c.req.param('symbol');
-    const pathStr = c.req.path;
-    const interval = c.req.query('interval') || (pathStr.includes('minute') ? '1m' : '1d');
-    const adjust = c.req.query('adjust') || 'qfq';
-
-    const result = await handleQuantOrLocalWorker(c, `/v1/market/cn/stocks/${symbol}/chart`, async () => {
-      return await marketProvider.getStockChart(symbol, interval, adjust);
-    });
-    return c.json(result);
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取标的图表数据失败' },
-      request_id: c.get('requestId'),
-    }, 500);
-  }
-};
-
-app.get('/api/v1/market/cn/stocks/:symbol/chart', handleMarketCnChart);
-app.get('/api/market/cn/stocks/:symbol/chart', handleMarketCnChart);
-app.get('/api/v1/market/cn/stocks/:symbol/history', handleMarketCnChart);
-app.get('/api/market/cn/stocks/:symbol/history', handleMarketCnChart);
-app.get('/api/v1/market/cn/stocks/:symbol/minute', handleMarketCnChart);
-app.get('/api/market/cn/stocks/:symbol/minute', handleMarketCnChart);
-
-// 5. Stock Detail & Real-time Quote
-const handleMarketCnStockDetail = async (c: any) => {
-  try {
-    const symbol = c.req.param('symbol');
-    const result = await handleQuantOrLocalWorker(c, `/v1/market/cn/stocks/${symbol}`, async () => {
-      return await marketProvider.getStockDetail(symbol);
-    });
-    return c.json(result);
-  } catch (err: any) {
-    return c.json({
-      success: false,
-      error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取标的详情失败' },
-      request_id: c.get('requestId'),
-    }, 500);
-  }
-};
-
-app.get('/api/v1/market/cn/stocks/:symbol', handleMarketCnStockDetail);
-app.get('/api/market/cn/stocks/:symbol', handleMarketCnStockDetail);
-app.get('/api/v1/market/cn/stocks/:symbol/detail', handleMarketCnStockDetail);
-app.get('/api/market/cn/stocks/:symbol/detail', handleMarketCnStockDetail);
-app.get('/api/v1/market/cn/stocks/:symbol/quote', handleMarketCnStockDetail);
-app.get('/api/market/cn/stocks/:symbol/quote', handleMarketCnStockDetail);
-
-// Legacy Market & Quote routes
-app.get('/api/v1/markets/overview', async (c) => c.json(await marketProvider.getMarketOverview()));
-app.get('/api/markets/overview', async (c) => c.json(await marketProvider.getMarketOverview()));
-
-app.get('/api/v1/instruments/search', async (c) => {
-  const q = (c.req.query('q') || '').toLowerCase();
-  const all = [...MarketDataProvider.HOT_CN_STOCKS, ...MarketDataProvider.HOT_US_STOCKS];
-  const matched = all.filter((s) => s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
-  return c.json({ count: matched.length, results: matched });
-});
-app.get('/api/instruments/search', async (c) => {
-  const q = (c.req.query('q') || '').toLowerCase();
-  const all = [...MarketDataProvider.HOT_CN_STOCKS, ...MarketDataProvider.HOT_US_STOCKS];
-  const matched = all.filter((s) => s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q));
-  return c.json({ count: matched.length, results: matched });
-});
-
-app.get('/api/v1/quotes/:symbol', async (c) => c.json(await marketProvider.getQuote(c.req.param('symbol'))));
-app.get('/api/quotes/:symbol', async (c) => c.json(await marketProvider.getQuote(c.req.param('symbol'))));
-
-app.get('/api/v1/bars/:symbol', async (c) => {
-  const symbol = c.req.param('symbol');
-  const period = c.req.query('period') || '1M';
-  const adjust = c.req.query('adjust') || 'qfq';
-  const bars = await marketProvider.getBars(symbol, period, adjust);
-  return c.json({ symbol, period, count: bars.length, data: bars });
-});
-app.get('/api/bars/:symbol', async (c) => {
-  const symbol = c.req.param('symbol');
-  const period = c.req.query('period') || '1M';
-  const adjust = c.req.query('adjust') || 'qfq';
-  const bars = await marketProvider.getBars(symbol, period, adjust);
-  return c.json({ symbol, period, count: bars.length, data: bars });
-});
+// Mount Market Pipeline V2 Routes (Pure D1 / R2 read architecture)
+const marketRouter = createMarketRouter();
+app.route('/api/v1/market', marketRouter);
+app.route('/api/market', marketRouter);
 
 // System Status Endpoint (Strict truthfulness - no pseudo-healthy labels)
 app.get('/api/v1/system/status', async (c) => {
@@ -1772,4 +1580,22 @@ app.post('/api/v1/research/threads/:id/messages', async (c) => {
   });
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(event: ScheduledEvent, env: Bindings, ctx: ExecutionContext) {
+    console.log(`[Cron Trigger] Market Sync Scheduled Event at ${new Date(event.scheduledTime).toISOString()}`);
+    const syncService = new MarketSyncService(env);
+    ctx.waitUntil(
+      syncService.runSync('cron').then(res => {
+        if (res.success) {
+          console.log(`[Cron Trigger] Market Sync succeeded: Snapshot [${res.snapshotId}]`);
+        } else {
+          console.log(`[Cron Trigger] Market Sync skipped or failed: ${res.error}`);
+        }
+      }).catch(err => {
+        console.error('[Cron Trigger] Market Sync unhandled error:', err);
+      })
+    );
+  }
+};
+

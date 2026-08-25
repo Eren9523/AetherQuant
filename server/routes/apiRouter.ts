@@ -77,119 +77,128 @@ apiRouter.get('/usage', async (req: Request, res: Response) => {
   });
 });
 
-// Helper: Proxy to external Python Quant Service or fallback to built-in live market provider
-async function handleQuantOrLocal(req: Request, targetPath: string, fallbackFn: () => Promise<any>) {
-  const quantUrl = process.env.QUANT_SERVICE_URL;
-  const quantToken = process.env.QUANT_SERVICE_TOKEN;
+// Helper: Strict Proxy to external Python Quant Service
+async function proxyQuantRequest(req: Request, res: Response, targetPath: string, timeoutMs: number = 25000) {
+  const quantUrl = process.env.QUANT_SERVICE_URL || 'http://127.0.0.1:8001';
+  const quantToken = process.env.QUANT_SERVICE_TOKEN || 'local-dev-quant-token-2026';
 
-  if (quantUrl && quantToken) {
-    try {
-      const urlObj = new URL(targetPath.startsWith('/') ? targetPath : `/${targetPath}`, quantUrl);
-      Object.entries(req.query).forEach(([k, v]) => {
-        if (typeof v === 'string') urlObj.searchParams.set(k, v);
-      });
-
-      const response = await fetch(urlObj.toString(), {
-        headers: {
-          Authorization: `Bearer ${quantToken}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(4000),
-      });
-
-      if (response.ok) {
-        return await response.json();
-      }
-    } catch (e) {
-      console.warn(`[Proxy] Forwarding to Quant Service ${targetPath} failed, using local provider:`, e);
-    }
+  if (!quantUrl) {
+    return res.status(503).json({
+      success: false,
+      error: {
+        code: 'QUANT_SERVICE_NOT_CONFIGURED',
+        message: '量化微服务未配置 (QUANT_SERVICE_URL 缺失)',
+      },
+      request_id: `req_${Date.now()}`,
+    });
   }
 
-  // Fallback to built-in real data provider
-  const data = await fallbackFn();
-  return {
-    success: true,
-    data,
-    request_id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-  };
+  try {
+    const urlObj = new URL(targetPath.startsWith('/') ? targetPath : `/${targetPath}`, quantUrl);
+    Object.entries(req.query).forEach(([k, v]) => {
+      if (typeof v === 'string') urlObj.searchParams.set(k, v);
+    });
+
+    const response = await fetch(urlObj.toString(), {
+      headers: {
+        ...(quantToken ? { Authorization: `Bearer ${quantToken}` } : {}),
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    const json: any = await response.json();
+    if (!response.ok) {
+      return res.status(response.status).json({
+        success: false,
+        error: json.error || { code: `QUANT_HTTP_${response.status}`, message: json.detail || '量化服务返回异常' },
+        request_id: `req_${Date.now()}`,
+      });
+    }
+
+    return res.status(response.status).json({
+      ...json,
+      request_id: `req_${Date.now()}`,
+    });
+  } catch (err: any) {
+    const isTimeout = err.name === 'TimeoutError' || err.message?.includes('timeout') || err.message?.includes('aborted');
+    return res.status(502).json({
+      success: false,
+      error: {
+        code: isTimeout ? 'QUANT_SERVICE_TIMEOUT' : 'QUANT_SERVICE_UNAVAILABLE',
+        message: isTimeout ? '量化微服务请求超时，请稍后重试' : `无法连接量化微服务 (${err.message || 'Connection refused'})`,
+      },
+      request_id: `req_${Date.now()}`,
+    });
+  }
 }
+
+// 0. Market Health Probing
+apiRouter.get(['/market/health', '/v1/market/health'], async (req: Request, res: Response) => {
+  const quantUrl = process.env.QUANT_SERVICE_URL || 'http://127.0.0.1:8001';
+  const quantToken = process.env.QUANT_SERVICE_TOKEN || 'local-dev-quant-token-2026';
+  const startTime = Date.now();
+  try {
+    const response = await fetch(`${quantUrl}/health`, {
+      headers: {
+        ...(quantToken ? { Authorization: `Bearer ${quantToken}` } : {}),
+        Accept: 'application/json',
+      },
+      signal: AbortSignal.timeout(5000),
+    });
+    const latency = Date.now() - startTime;
+    if (response.ok) {
+      const data: any = await response.json();
+      return res.json({
+        success: true,
+        data: {
+          gateway: 'healthy',
+          quant_service: data.status || 'healthy',
+          akshare_version: data.akshare_version || '1.18.88',
+          latency_ms: latency,
+          status: 'healthy',
+          timestamp: new Date().toISOString(),
+        },
+        request_id: `req_${Date.now()}`,
+      });
+    } else {
+      return res.status(502).json({
+        success: false,
+        error: { code: 'QUANT_SERVICE_UNHEALTHY', message: `量化服务状态异常: ${response.status}` },
+        request_id: `req_${Date.now()}`,
+      });
+    }
+  } catch (err: any) {
+    return res.status(502).json({
+      success: false,
+      error: { code: 'QUANT_SERVICE_UNAVAILABLE', message: `量化服务探测失败: ${err.message}` },
+      request_id: `req_${Date.now()}`,
+    });
+  }
+});
 
 // 3. Markets & Instruments (Real A-Share Quant APIs)
 apiRouter.get(['/market/cn/spot', '/v1/market/cn/spot'], async (req: Request, res: Response) => {
-  try {
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = parseInt(req.query.page_size as string || req.query.pageSize as string) || 50;
-    const search = (req.query.search as string) || '';
-    const sortBy = (req.query.sort_by as string || req.query.sortBy as string) || 'change_pct';
-    const sortOrder = ((req.query.sort_order as string || req.query.sortOrder as string) || 'desc') as 'asc' | 'desc';
-    const exchange = (req.query.exchange as string) || undefined;
-    const symbols = (req.query.symbols as string) || undefined;
-
-    const result = await handleQuantOrLocal(req, '/v1/market/cn/spot', async () => {
-      return await marketProvider.getSpotList({
-        page,
-        pageSize,
-        search,
-        sortBy,
-        sortOrder,
-        exchange,
-        symbols,
-      });
-    });
-
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取A股行情失败' } });
-  }
+  return proxyQuantRequest(req, res, '/v1/market/cn/spot', 35000);
 });
 
 apiRouter.get(['/market/cn/indices', '/v1/market/cn/indices'], async (req: Request, res: Response) => {
-  try {
-    const result = await handleQuantOrLocal(req, '/v1/market/cn/indices', async () => {
-      return await marketProvider.getIndices();
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取大盘指数失败' } });
-  }
+  return proxyQuantRequest(req, res, '/v1/market/cn/indices', 15000);
 });
 
 apiRouter.get(['/market/cn/overview', '/v1/market/cn/overview'], async (req: Request, res: Response) => {
-  try {
-    const result = await handleQuantOrLocal(req, '/v1/market/cn/overview', async () => {
-      return await marketProvider.getMarketBreadthOverview();
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取市场全景失败' } });
-  }
+  return proxyQuantRequest(req, res, '/v1/market/cn/overview', 20000);
 });
 
 apiRouter.get(['/market/cn/stocks/:symbol/chart', '/v1/market/cn/stocks/:symbol/chart', '/market/cn/stocks/:symbol/history', '/v1/market/cn/stocks/:symbol/history', '/market/cn/stocks/:symbol/minute', '/v1/market/cn/stocks/:symbol/minute'], async (req: Request, res: Response) => {
-  try {
-    const symbol = req.params.symbol;
-    const interval = (req.query.interval as string) || (req.path.includes('minute') ? '1m' : '1d');
-    const adjust = (req.query.adjust as string) || 'qfq';
-
-    const result = await handleQuantOrLocal(req, `/v1/market/cn/stocks/${symbol}/chart`, async () => {
-      return await marketProvider.getStockChart(symbol, interval, adjust);
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取标的图表数据失败' } });
-  }
+  const symbol = req.params.symbol;
+  const target = req.path.includes('history') ? `/v1/market/cn/stocks/${symbol}/history` : `/v1/market/cn/stocks/${symbol}/chart`;
+  return proxyQuantRequest(req, res, target, 25000);
 });
 
 apiRouter.get(['/market/cn/stocks/:symbol', '/v1/market/cn/stocks/:symbol', '/market/cn/stocks/:symbol/detail', '/v1/market/cn/stocks/:symbol/detail', '/market/cn/stocks/:symbol/quote', '/v1/market/cn/stocks/:symbol/quote'], async (req: Request, res: Response) => {
-  try {
-    const symbol = req.params.symbol;
-    const result = await handleQuantOrLocal(req, `/v1/market/cn/stocks/${symbol}`, async () => {
-      return await marketProvider.getStockDetail(symbol);
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: { code: 'MARKET_DATA_ERROR', message: err.message || '获取标的详情失败' } });
-  }
+  const symbol = req.params.symbol;
+  return proxyQuantRequest(req, res, `/v1/market/cn/stocks/${symbol}`, 15000);
 });
 
 // Legacy Market endpoints

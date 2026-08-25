@@ -333,14 +333,48 @@ class MarketService:
         """
         clean_symbol = str(symbol).strip().zfill(6)
         
-        # 1. Fetch spot quote for symbol
-        spot_res = self.get_spot_data(symbols=[clean_symbol], page_size=1)
-        if not spot_res.stocks:
+        # 1. Fetch single stock quote directly (instant ~50ms)
+        quote = None
+        single = AKShareProvider.get_single_stock_spot(clean_symbol)
+        if single:
+            quote = SpotStockItem(
+                symbol=clean_symbol,
+                name=single.get("name", clean_symbol),
+                market="CN",
+                exchange=self._detect_exchange(clean_symbol),
+                last=single.get("last"),
+                open=single.get("open"),
+                high=single.get("high"),
+                low=single.get("low"),
+                prev_close=single.get("prev_close"),
+                change=single.get("change"),
+                change_pct=single.get("change_pct"),
+                volume=single.get("volume"),
+                turnover=single.get("turnover"),
+                turnover_rate=single.get("turnover_rate"),
+                amplitude=None,
+                pe_dynamic=single.get("pe_dynamic"),
+                pb=single.get("pb"),
+                total_market_cap=single.get("total_market_cap"),
+                float_market_cap=single.get("float_market_cap"),
+                source="akshare",
+                provider="eastmoney",
+                as_of=datetime.datetime.utcnow().isoformat() + "Z"
+            )
+
+        if not quote:
+            try:
+                spot_res = self.get_spot_data(symbols=[clean_symbol], page_size=1)
+                if spot_res.stocks:
+                    quote = spot_res.stocks[0]
+            except Exception as e:
+                logger.warning("get_spot_data fallback failed for %s: %s", clean_symbol, str(e))
+
+        if not quote:
             raise AKShareProviderError(
                 code="NOT_FOUND",
                 message=f"未查询到标的 [{clean_symbol}] 的实时行情数据"
             )
-        quote = spot_res.stocks[0]
 
         # 2. Fetch basic info (cached 24h)
         cache_key = f"basic_info:{clean_symbol}"
