@@ -38,6 +38,7 @@ import {
   Pencil,
   X,
   MessageSquarePlus,
+  ArrowDown,
 } from 'lucide-react';
 
 const STORAGE_THREADS_KEY = 'aetherquant_research_threads_v3';
@@ -294,7 +295,11 @@ export const AIResearchView: React.FC = () => {
   >([]);
   const [loading, setLoading] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Smart non-intrusive scroll handling (ChatGPT / Claude pattern)
+  const mainScrollContainerRef = useRef<HTMLElement>(null);
+  const isUserScrolledUpRef = useRef<boolean>(false);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState<boolean>(false);
 
   // Audio recording toggle
   const [isRecording, setIsRecording] = useState(false);
@@ -381,9 +386,9 @@ export const AIResearchView: React.FC = () => {
 
     if (cleanedCached && cleanedCached.length > 0) {
       setThreadsList(cleanedCached);
-      if (!currentThreadId || !cleanedCached.some((t: any) => t.id === currentThreadId)) {
-        const first = cleanedCached[0];
-        selectThread(first.id, first.title);
+      // If currentThreadId was already set by user, keep it; otherwise stay in new draft view
+      if (currentThreadId && cleanedCached.some((t: any) => t.id === currentThreadId)) {
+        selectThread(currentThreadId);
       }
     } else {
       setThreadsList([]);
@@ -404,9 +409,8 @@ export const AIResearchView: React.FC = () => {
 
         setThreadsList(normalized);
         saveCachedThreads(currentUserId, normalized);
-        const firstThread = normalized[0];
-        if (firstThread && (!currentThreadId || !normalized.some((t: any) => t.id === currentThreadId))) {
-          selectThread(firstThread.id, firstThread.title);
+        if (currentThreadId && normalized.some((t: any) => t.id === currentThreadId)) {
+          selectThread(currentThreadId);
         }
       } else {
         // User has 0 research records: default state is 0 records
@@ -444,13 +448,25 @@ export const AIResearchView: React.FC = () => {
     loadPromptsFromService(newSeed);
   };
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Smart non-intrusive container scroll handler
+  const handleScroll = () => {
+    const el = mainScrollContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // If user scrolled up more than 80px, respect their intent and pause auto-scrolling
+    const isUp = distanceFromBottom > 80;
+    isUserScrolledUpRef.current = isUp;
+    setShowScrollBottomBtn(isUp);
   };
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, loading]);
+  const scrollToBottomManual = () => {
+    isUserScrolledUpRef.current = false;
+    setShowScrollBottomBtn(false);
+    const el = mainScrollContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    }
+  };
 
   // Load thread detail messages
   const selectThread = async (threadId: string, _threadTitle?: string) => {
@@ -580,6 +596,15 @@ export const AIResearchView: React.FC = () => {
     saveCachedMessages(currentUserId, activeId, newMessages);
     setLoading(true);
 
+    // Reset user scroll state for newly submitted question and softly jump to bottom
+    isUserScrolledUpRef.current = false;
+    setShowScrollBottomBtn(false);
+    setTimeout(() => {
+      if (mainScrollContainerRef.current) {
+        mainScrollContainerRef.current.scrollTop = mainScrollContainerRef.current.scrollHeight;
+      }
+    }, 30);
+
     // Optimistically update thread title in UI immediately
     setThreadsList((prev) => {
       const existing = prev.find((t) => t.id === activeId);
@@ -643,6 +668,10 @@ export const AIResearchView: React.FC = () => {
                 : msg
             )
           );
+          // Only auto-follow if user has not actively scrolled up to inspect previous content
+          if (!isUserScrolledUpRef.current && mainScrollContainerRef.current) {
+            mainScrollContainerRef.current.scrollTop = mainScrollContainerRef.current.scrollHeight;
+          }
         },
         async (full) => {
           accumulatedText = full || accumulatedText;
@@ -1255,198 +1284,251 @@ export const AIResearchView: React.FC = () => {
 
         {/* Main Canvas Area */}
         {activeTab === 'chat' && (
-          <main className="flex-1 flex flex-col justify-between overflow-y-auto p-4 md:p-8 max-w-5xl mx-auto w-full space-y-6">
-            {/* Header & Prompts Recommendation Cards (Built-in + Daily AI Pool + Smart Random Refresh) */}
-            <div className="space-y-6 animate-in fade-in duration-500">
-              <div className="flex items-end justify-between border-b border-slate-200/60 pb-3">
-                <div className="space-y-1">
-                  <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
-                    <span>探索 AI 驱动的量化研究</span>
-                    <span className="text-[11px] font-mono px-2.5 py-0.5 bg-purple-50 text-purple-700 rounded-full border border-purple-200/80 font-bold">
-                      每日 AI 智能问题库
-                    </span>
-                  </h1>
-                  <p className="text-xs text-slate-500 font-normal">
-                    系统每日自动生成 50 个最新量化研究问题，点击卡片填入对话框快速发起发起诊股、选股与策略回测
-                  </p>
+          <main
+            ref={mainScrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 flex flex-col justify-between overflow-y-auto p-4 md:p-6 max-w-5xl mx-auto w-full relative space-y-4"
+          >
+            {/* When Draft Mode (0 messages): Show Full Prompts Recommendation Gallery */}
+            {messages.length === 0 ? (
+              <div className="space-y-6 animate-in fade-in duration-300 my-auto py-4">
+                <div className="flex items-end justify-between border-b border-slate-200/60 pb-3">
+                  <div className="space-y-1">
+                    <h1 className="text-xl md:text-2xl font-extrabold tracking-tight text-slate-900 flex items-center gap-2">
+                      <span>探索 AI 驱动的量化研究</span>
+                      <span className="text-[11px] font-mono px-2.5 py-0.5 bg-purple-50 text-purple-700 rounded-full border border-purple-200/80 font-bold">
+                        每日 AI 智能问题库
+                      </span>
+                    </h1>
+                    <p className="text-xs text-slate-500 font-normal">
+                      系统每日自动生成 50 个最新量化研究问题，点击卡片填入对话框快速发起诊股、选股与策略回测
+                    </p>
+                  </div>
+
+                  {/* Refresh Prompt Pool Button */}
+                  <button
+                    onClick={handleRefreshPrompts}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-full border border-slate-200/80 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <Dice5 className="w-3.5 h-3.5 text-purple-600 animate-spin-once" />
+                    <span>换一批灵感</span>
+                  </button>
                 </div>
 
-                {/* Refresh Prompt Pool Button */}
-                <button
-                  onClick={handleRefreshPrompts}
-                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-full border border-slate-200/80 shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  <Dice5 className="w-3.5 h-3.5 text-purple-600 animate-spin-once" />
-                  <span>换一批灵感</span>
-                </button>
+                {/* 6 Recommended Cards Grid (Clicking fills composer!) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                  {displayedPrompts.map((p) => {
+                    const Icon = getPromptIcon(p.category);
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => handlePromptCardClick(p.prompt)}
+                        className="p-4 bg-white hover:bg-slate-50/90 border border-slate-200/80 hover:border-slate-300 rounded-2xl shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between space-y-3"
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200/60">
+                            {p.category}
+                          </span>
+                          {p.is_stable_template ? (
+                            <span className="text-[9px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
+                              🏛 稳定模板
+                            </span>
+                          ) : p.freshness_weight === 1.0 ? (
+                            <span className="text-[9px] font-mono font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                              ⚡ 今日动态
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
+                              ⏱ 近日热点
+                            </span>
+                          )}
+                          <Icon className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-900 transition-colors ml-auto" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-xs font-bold text-slate-900 group-hover:text-black">
+                            {p.title}
+                          </h3>
+                          <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
+                            {p.summary || p.prompt}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100/80 text-[10px] font-mono text-slate-400">
+                          {p.tags.slice(0, 2).map((t, idx) => (
+                            <span key={idx} className="bg-slate-50 px-1.5 py-0.5 rounded">
+                              #{t}
+                            </span>
+                          ))}
+                          <span className="ml-auto text-purple-600 font-semibold group-hover:underline text-[10px]">
+                            填入提问 ↵
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-
-              {/* 6 Recommended Cards Grid (Clicking fills composer!) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                {displayedPrompts.map((p) => {
-                  const Icon = getPromptIcon(p.category);
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => handlePromptCardClick(p.prompt)}
-                      className="p-4 bg-white hover:bg-slate-50/90 border border-slate-200/80 hover:border-slate-300 rounded-2xl shadow-2xs hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between space-y-3"
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-[10px] font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200/60">
-                          {p.category}
-                        </span>
-                        {p.is_stable_template ? (
-                          <span className="text-[9px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200">
-                            🏛 稳定模板
-                          </span>
-                        ) : p.freshness_weight === 1.0 ? (
-                          <span className="text-[9px] font-mono font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
-                            ⚡ 今日动态
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-mono font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                            ⏱ 近日热点
-                          </span>
-                        )}
-                        <Icon className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-900 transition-colors ml-auto" />
-                      </div>
-                      <div className="space-y-1">
-                        <h3 className="text-xs font-bold text-slate-900 group-hover:text-black">
-                          {p.title}
-                        </h3>
-                        <p className="text-[11px] text-slate-500 leading-snug line-clamp-2">
-                          {p.summary || p.prompt}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-slate-100/80 text-[10px] font-mono text-slate-400">
-                        {p.tags.slice(0, 2).map((t, idx) => (
-                          <span key={idx} className="bg-slate-50 px-1.5 py-0.5 rounded">
-                            #{t}
-                          </span>
-                        ))}
-                        <span className="ml-auto text-purple-600 font-semibold group-hover:underline text-[10px]">
-                          填入提问 ↵
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+            ) : (
+              /* When in Active Conversation: Show clean compact top indicator */
+              <div className="flex items-center justify-between py-1.5 px-3 bg-slate-100/80 rounded-xl border border-slate-200/60 text-xs text-slate-600 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2 truncate">
+                  <Bot className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <span className="font-semibold text-slate-800 truncate">
+                    {threadsList.find((t) => t.id === currentThreadId)?.title || '量化研究会话'}
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                    {selectedStockSymbol}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRefreshPrompts}
+                    className="text-[11px] text-slate-500 hover:text-slate-800 flex items-center gap-1 px-2 py-0.5 rounded-lg hover:bg-white transition-colors cursor-pointer"
+                  >
+                    <Dice5 className="w-3 h-3 text-purple-500" />
+                    <span>灵感库</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={createNewThread}
+                    className="text-[11px] text-purple-600 hover:text-purple-700 font-semibold flex items-center gap-1 px-2 py-0.5 rounded-lg hover:bg-purple-50 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>新对话</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Conversation Flow Area */}
-            <div className="space-y-5 flex-1 pt-2">
-              {messages.map((msg, idx) => (
-                <div
-                  key={msg.id || idx}
-                  className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-                >
+            {messages.length > 0 && (
+              <div className="space-y-5 flex-1 pt-1">
+                {messages.map((msg, idx) => (
                   <div
-                    className={`max-w-[90%] md:max-w-[85%] p-4 md:p-5 rounded-2xl text-xs md:text-sm leading-relaxed transition-all ${
-                      msg.sender === 'user'
-                        ? 'bg-slate-900 text-white shadow-xs font-medium rounded-br-none'
-                        : 'bg-white text-slate-800 border border-slate-200/80 shadow-xs rounded-bl-none'
-                    }`}
+                    key={msg.id || idx}
+                    className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
                   >
-                    {/* Header bar for Assistant Message */}
-                    {msg.sender === 'assistant' && (
-                      <div className="flex items-center gap-2 pb-2.5 mb-2.5 border-b border-slate-100 text-xs font-bold text-slate-900">
-                        <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-extrabold">
-                          P
-                        </div>
-                        <span>Penguin Quant AI 量化研究助手</span>
-                        <div className="ml-auto flex items-center gap-2">
-                          <span className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                            ● 行情可用 ● 因子可用
-                          </span>
-                          <span className="text-[10px] font-mono text-slate-400 font-normal">{msg.timestamp || '刚刚'}</span>
-                          {msg.content && (
-                            <button
-                              type="button"
-                              onClick={() => handleCopyContent(msg.id, msg.content)}
-                              className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border border-slate-200/80 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer ml-1"
-                              title="复制完整回答"
-                            >
-                              {copiedMsgId === msg.id ? (
-                                <>
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                  <span className="text-emerald-600 font-medium">已复制</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Copy className="w-3 h-3 text-slate-500" />
-                                  <span>复制回答</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {msg.sender === 'assistant' ? (
-                      msg.content ? (
-                        <MarkdownRenderer content={msg.content} />
-                      ) : (
-                        <div className="flex items-center gap-2 text-xs text-slate-500 py-1 font-mono">
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-700" />
-                          <span>Penguin AI 正在计算并生成深度量化分析...</span>
-                        </div>
-                      )
-                    ) : (
-                      <div className="whitespace-pre-wrap font-sans text-white text-xs md:text-sm">{msg.content}</div>
-                    )}
-
-                    {/* Step Execution Logs */}
-                    {msg.steps && msg.steps.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-slate-100 space-y-1 font-mono text-[11px] text-slate-500">
-                        {msg.steps.map((st, sIdx) => (
-                          <div key={sIdx} className="flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <span>{st}</span>
+                    <div
+                      className={`max-w-[90%] md:max-w-[85%] p-4 md:p-5 rounded-2xl text-xs md:text-sm leading-relaxed transition-all ${
+                        msg.sender === 'user'
+                          ? 'bg-slate-900 text-white shadow-xs font-medium rounded-br-none'
+                          : 'bg-white text-slate-800 border border-slate-200/80 shadow-xs rounded-bl-none'
+                      }`}
+                    >
+                      {/* Header bar for Assistant Message */}
+                      {msg.sender === 'assistant' && (
+                        <div className="flex items-center gap-2 pb-2.5 mb-2.5 border-b border-slate-100 text-xs font-bold text-slate-900">
+                          <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[10px] font-extrabold">
+                            P
                           </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Quant Result Card */}
-                    {msg.resultCard && (
-                      <div className="mt-3.5 pt-3.5 border-t border-slate-100 space-y-2">
-                        <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                          <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>{msg.resultCard.title}</span>
+                          <span>Penguin Quant AI 量化研究助手</span>
+                          <div className="ml-auto flex items-center gap-2">
+                            <span className="text-[10px] font-mono text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              ● 行情可用 ● 因子可用
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400 font-normal">{msg.timestamp || '刚刚'}</span>
+                            {msg.content && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopyContent(msg.id, msg.content)}
+                                className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border border-slate-200/80 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer ml-1"
+                                title="复制完整回答"
+                              >
+                                {copiedMsgId === msg.id ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span className="text-emerald-600 font-medium">已复制</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3 h-3 text-slate-500" />
+                                    <span>复制回答</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-1 gap-1.5">
-                          {msg.resultCard.items.map((st: any, sIdx: number) => (
-                            <div
-                              key={sIdx}
-                              onClick={() => navigateToStockDetail(st.symbol)}
-                              className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/70 cursor-pointer transition-all flex items-center justify-between"
-                            >
-                              <div>
-                                <div className="font-bold text-slate-900 text-xs">
-                                  {st.name} <span className="font-mono text-slate-400 text-[10px]">({st.symbol})</span>
-                                </div>
-                                <div className="text-[11px] text-slate-500">{st.reason}</div>
-                              </div>
-                              <span className="font-mono font-bold text-emerald-600 text-xs">{st.score}分</span>
+                      )}
+
+                      {msg.sender === 'assistant' ? (
+                        msg.content ? (
+                          <MarkdownRenderer content={msg.content} />
+                        ) : (
+                          <div className="flex items-center gap-2 text-xs text-slate-500 py-1 font-mono">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-700" />
+                            <span>Penguin AI 正在计算并生成深度量化分析...</span>
+                          </div>
+                        )
+                      ) : (
+                        <div className="whitespace-pre-wrap font-sans text-white text-xs md:text-sm">{msg.content}</div>
+                      )}
+
+                      {/* Step Execution Logs */}
+                      {msg.steps && msg.steps.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-100 space-y-1 font-mono text-[11px] text-slate-500">
+                          {msg.steps.map((st, sIdx) => (
+                            <div key={sIdx} className="flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <span>{st}</span>
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                      )}
 
-              {loading && (
-                <div className="flex items-center gap-2 text-xs text-slate-500 p-3.5 bg-white rounded-2xl w-fit border border-slate-200/70 shadow-xs animate-pulse">
-                  <Loader2 className="w-4 h-4 animate-spin text-slate-700" />
-                  <span>Penguin AI 正在计算与整合因子特征...</span>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                      {/* Quant Result Card */}
+                      {msg.resultCard && (
+                        <div className="mt-3.5 pt-3.5 border-t border-slate-100 space-y-2">
+                          <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <BarChart3 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>{msg.resultCard.title}</span>
+                          </div>
+                          <div className="grid grid-cols-1 gap-1.5">
+                            {msg.resultCard.items.map((st: any, sIdx: number) => (
+                              <div
+                                key={sIdx}
+                                onClick={() => navigateToStockDetail(st.symbol)}
+                                className="p-3 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/70 cursor-pointer transition-all flex items-center justify-between"
+                              >
+                                <div>
+                                  <div className="font-bold text-slate-900 text-xs">
+                                    {st.name} <span className="font-mono text-slate-400 text-[10px]">({st.symbol})</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500">{st.reason}</div>
+                                </div>
+                                <span className="font-mono font-bold text-emerald-600 text-xs">{st.score}分</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {loading && (
+                  <div className="flex items-center gap-2 text-xs text-slate-500 p-3.5 bg-white rounded-2xl w-fit border border-slate-200/70 shadow-xs animate-pulse">
+                    <Loader2 className="w-4 h-4 animate-spin text-slate-700" />
+                    <span>Penguin AI 正在计算与整合因子特征...</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Smart Non-Intrusive Floating Scroll-to-Bottom Button */}
+            {showScrollBottomBtn && messages.length > 0 && (
+              <div className="sticky bottom-36 z-30 flex justify-end pr-2 pointer-events-none">
+                <button
+                  type="button"
+                  onClick={scrollToBottomManual}
+                  className="pointer-events-auto px-3.5 py-1.5 bg-slate-900/90 hover:bg-black text-white rounded-full shadow-lg border border-slate-700/60 transition-all flex items-center gap-1.5 text-xs font-semibold hover:scale-105 animate-in fade-in zoom-in-95 cursor-pointer backdrop-blur-md"
+                  title="滚回最新消息"
+                >
+                  <ArrowDown className="w-3.5 h-3.5 text-purple-300 animate-bounce" />
+                  <span>回到底部</span>
+                </button>
+              </div>
+            )}
 
             {/* Apple Floating Command Input Capsule (Attached below conversation) */}
             <div className="sticky bottom-4 z-20 space-y-2.5 pt-1">
