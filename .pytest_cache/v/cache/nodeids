@@ -1,0 +1,18 @@
+[
+  "quant-service/tests/test_akshare_smoke.py::test_akshare_history_smoke_600519",
+  "quant-service/tests/test_akshare_smoke.py::test_akshare_spot_smoke",
+  "quant-service/tests/test_akshare_smoke.py::test_akshare_version_check",
+  "quant-service/tests/test_auth_cache.py::test_health_endpoint_when_akshare_missing",
+  "quant-service/tests/test_auth_cache.py::test_quant_auth_correct_token_pass",
+  "quant-service/tests/test_auth_cache.py::test_quant_auth_invalid_401",
+  "quant-service/tests/test_auth_cache.py::test_quant_auth_required_401",
+  "quant-service/tests/test_auth_cache.py::test_quant_auth_unconfigured_503",
+  "quant-service/tests/test_auth_cache.py::test_quant_service_no_cors_wildcard",
+  "quant-service/tests/test_auth_cache.py::test_ttl_cache_mechanism",
+  "quant-service/tests/test_normalization.py::test_exchange_detection",
+  "quant-service/tests/test_normalization.py::test_nan_and_inf_handling",
+  "quant-service/tests/test_normalization.py::test_symbol_leading_zero_preserved",
+  "quant-service/tests/test_tencent_history_fallback.py::test_full_spot_prefers_real_akshare_and_does_not_fake_ohlc",
+  "quant-service/tests/test_tencent_history_fallback.py::test_tencent_history_is_used_when_eastmoney_fails",
+  "quant-service/tests/test_tencent_history_fallback.py::test_tencent_weekly_uses_last_actual_trade_date"
+]

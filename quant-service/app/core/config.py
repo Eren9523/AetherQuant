@@ -14,8 +14,10 @@ class Settings:
     # Internal Auth Token (Required for internal snapshot & pipeline endpoints)
     QUANT_SERVICE_TOKEN: Optional[str] = os.getenv("QUANT_SERVICE_TOKEN", "local-dev-quant-token-2026")
     
-    # Provider Order (Comma-separated: em,tx,sina)
-    AKSHARE_PROVIDER_ORDER_RAW: str = os.getenv("AKSHARE_PROVIDER_ORDER", "em,tx,sina")
+    # Provider Order (Comma-separated: tx,em,sina). Tencent is the default
+    # primary path because the full-market endpoint is fetched concurrently;
+    # EastMoney remains a real AKShare fallback.
+    AKSHARE_PROVIDER_ORDER_RAW: str = os.getenv("AKSHARE_PROVIDER_ORDER", "tx,em,sina")
     
     # Cache TTL Configurations (Seconds)
     SPOT_CACHE_TTL_SECONDS: int = int(os.getenv("SPOT_CACHE_TTL_SECONDS", "20"))

@@ -26,6 +26,7 @@ export class MarketKlineStore {
 
     const now = Date.now();
     const ttlMs = this.getTtlMs(cleanInterval);
+    const dataBucket = this.env.DATA_BUCKET || this.env.BUCKET;
 
     // 1. Check Manifest in D1
     const manifest = await this.env.DB
@@ -36,13 +37,13 @@ export class MarketKlineStore {
     let cachedBars: KlineBar[] | null = null;
     let isFresh = false;
 
-    if (manifest && this.env.BUCKET) {
+    if (manifest && dataBucket) {
       const updatedAtMs = new Date(manifest.updated_at).getTime();
       isFresh = (now - updatedAtMs) < ttlMs;
 
       // Try reading from R2
       try {
-        const obj = await this.env.BUCKET.get(r2Key);
+        const obj = await dataBucket.get(manifest.r2_key || r2Key);
         if (obj) {
           const content = await obj.text();
           cachedBars = JSON.parse(content) as KlineBar[];
@@ -79,7 +80,10 @@ export class MarketKlineStore {
           'Authorization': `Bearer ${quantToken || ''}`,
           'Accept': 'application/json'
         },
-        signal: AbortSignal.timeout(15000)
+        // AKShare may spend tens of seconds failing over between upstream
+        // providers. Keep the Worker request alive long enough for a real
+        // result instead of turning a recoverable provider delay into a 502.
+        signal: AbortSignal.timeout(60000)
       });
 
       if (!resp.ok) {
@@ -97,9 +101,9 @@ export class MarketKlineStore {
       const source = json.data.source || 'akshare';
 
       // Save to R2 asynchronously if bucket configured
-      if (this.env.BUCKET && freshBars.length > 0) {
+      if (dataBucket && freshBars.length > 0) {
         try {
-          await this.env.BUCKET.put(r2Key, JSON.stringify(freshBars), {
+          await dataBucket.put(r2Key, JSON.stringify(freshBars), {
             httpMetadata: { contentType: 'application/json' }
           });
 

@@ -42,12 +42,18 @@ async function ensureQuantServiceRunning() {
   } catch {}
 
   console.log('[DevServer] Launching Python Quant Service on 127.0.0.1:8001...');
+  const configuredPython = process.env.PYTHON_BIN?.trim();
+  const pythonCommand = configuredPython || (process.platform === 'win32' ? 'py' : 'python3');
+  const pythonArgs = [
+    '-c',
+    "import uvicorn, sys, os; sys.path.insert(0, os.path.abspath('quant-service')); uvicorn.run('app.main:app', host='127.0.0.1', port=8001, reload=False)",
+  ];
+  if (!configuredPython && process.platform === 'win32') {
+    pythonArgs.unshift('-3');
+  }
   const pythonProc = spawn(
-    'python3',
-    [
-      '-c',
-      "import uvicorn, sys, os; sys.path.insert(0, os.path.abspath('quant-service')); uvicorn.run('app.main:app', host='127.0.0.1', port=8001, reload=False)",
-    ],
+    pythonCommand,
+    pythonArgs,
     {
       env: {
         ...process.env,
@@ -71,23 +77,40 @@ async function applyD1Migrations(db: any) {
   for (const file of files) {
     const fullPath = path.join(migrationsDir, file);
     const sql = fs.readFileSync(fullPath, 'utf8');
+    // Miniflare's D1 exec() rejects comment-only lines in migration files.
+    // Execute explicit statements so local development follows the same schema
+    // as `wrangler d1 migrations apply` in production.
+    const statements = sql
+      .split(/\r?\n/)
+      .map(line => line.replace(/--.*$/, ''))
+      .join('\n')
+      .split(';')
+      .map(statement => statement.trim())
+      .filter(Boolean);
+
+    let appliedStatements = 0;
     try {
-      if (typeof db.exec === 'function') {
-        await db.exec(sql);
-      } else {
-        const statements = sql
-          .split(';')
-          .map(s => s.trim())
-          .filter(s => s.length > 0 && !s.startsWith('--'));
-        for (const stmt of statements) {
+      for (const stmt of statements) {
+        try {
           await db.prepare(stmt).run();
+          appliedStatements += 1;
+        } catch (err: any) {
+          // Local migrations are replayed on every dev-server start. A column
+          // added by an ALTER migration may already exist; that is idempotent.
+          if (/duplicate column name/i.test(err?.message || '')) {
+            continue;
+          }
+          throw err;
         }
       }
-      console.log(`[D1 Migration] Applied ${file} successfully.`);
+      console.log(`[D1 Migration] Applied ${file} (${appliedStatements} statements).`);
     } catch (err: any) {
-      console.warn(`[D1 Migration] Notice for ${file}:`, err?.message || err);
+      throw new Error(`[D1 Migration] Failed ${file}: ${err?.message || err}`);
     }
   }
+
+  await db.prepare('SELECT market FROM market_snapshot_pointer LIMIT 1').all();
+  console.log('[D1 Migration] Market pipeline schema verified.');
 }
 
 async function startWorkerDevServer() {
@@ -102,12 +125,14 @@ async function startWorkerDevServer() {
       configPath: './wrangler.jsonc',
     });
     console.log('[Wrangler Platform Proxy] Initialized local D1 & R2 bindings via root wrangler.jsonc.');
-    if (platformProxy?.env?.DB) {
-      await applyD1Migrations(platformProxy.env.DB);
-    }
   } catch (err) {
-    console.warn('[Wrangler Platform Proxy] Warning: Could not initialize platform proxy, falling back:', err);
+    throw new Error(`[Wrangler Platform Proxy] Initialization failed: ${err}`);
   }
+
+  if (!platformProxy?.env?.DB) {
+    throw new Error('[Wrangler Platform Proxy] D1 binding DB is missing. Check wrangler.jsonc.');
+  }
+  await applyD1Migrations(platformProxy.env.DB);
 
   // Create Vite Server in middleware mode
   let vite: any = null;
@@ -129,6 +154,7 @@ async function startWorkerDevServer() {
       GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
       QUANT_SERVICE_URL: process.env.QUANT_SERVICE_URL || platformProxy?.env?.QUANT_SERVICE_URL || 'http://127.0.0.1:8001',
       QUANT_SERVICE_TOKEN: process.env.QUANT_SERVICE_TOKEN || platformProxy?.env?.QUANT_SERVICE_TOKEN || 'local-dev-quant-token-2026',
+      MARKET_SYNC_TOKEN: process.env.MARKET_SYNC_TOKEN || platformProxy?.env?.MARKET_SYNC_TOKEN || 'local-dev-market-sync-token-2026',
       APP_ORIGIN: process.env.APP_ORIGIN || '',
       ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || '',
     };

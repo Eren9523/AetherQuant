@@ -357,11 +357,76 @@ class AKShareProvider:
                     adjust=adjust
                 )
                 if df is not None and not df.empty:
+                    df.attrs["provider"] = "eastmoney"
+                    df.attrs["source"] = "akshare"
                     return df
             except Exception as e:
                 logger.warning("ak.stock_zh_a_hist failed for %s (%s): %s", clean_symbol, clean_period, str(e))
 
-        # 2. Try ak.stock_zh_a_daily (Sina fallback)
+        # 2. Tencent history fallback. This interface is independent from the
+        # EastMoney endpoint and has been verified with live A-share data.
+        if hasattr(ak, "stock_zh_a_hist_tx"):
+            try:
+                prefix = "sh" if clean_symbol.startswith(("6", "9")) else ("bj" if clean_symbol.startswith(("8", "4", "920")) else "sz")
+                df_tx = ak.stock_zh_a_hist_tx(
+                    symbol=f"{prefix}{clean_symbol}",
+                    start_date=start_date or "19000101",
+                    end_date=end_date or "20500101",
+                    adjust=adjust,
+                    timeout=15
+                )
+                if df_tx is not None and not df_tx.empty:
+                    required = {"date", "open", "high", "low", "close", "volume"}
+                    if not required.issubset(set(df_tx.columns)):
+                        raise ValueError(f"Tencent history columns changed: {list(df_tx.columns)}")
+
+                    df_res = pd.DataFrame({
+                        "日期": pd.to_datetime(df_tx["date"], errors="coerce"),
+                        "开盘": pd.to_numeric(df_tx["open"], errors="coerce"),
+                        "最高": pd.to_numeric(df_tx["high"], errors="coerce"),
+                        "最低": pd.to_numeric(df_tx["low"], errors="coerce"),
+                        "收盘": pd.to_numeric(df_tx["close"], errors="coerce"),
+                        "成交量": pd.to_numeric(df_tx["volume"], errors="coerce"),
+                        "成交额": pd.to_numeric(df_tx.get("amount"), errors="coerce"),
+                    }).dropna(subset=["日期", "开盘", "最高", "最低", "收盘"])
+
+                    tx_turnover = pd.to_numeric(df_tx.get("turnover"), errors="coerce")
+                    df_res["换手率"] = tx_turnover * 100.0
+
+                    if clean_period in ("weekly", "monthly"):
+                        period_key = (
+                            df_res["日期"].dt.to_period("W-FRI")
+                            if clean_period == "weekly"
+                            else df_res["日期"].dt.to_period("M")
+                        )
+                        df_res = (
+                            df_res.assign(_period=period_key)
+                            .groupby("_period", sort=True)
+                            .agg({
+                                "日期": "max",
+                                "开盘": "first",
+                                "最高": "max",
+                                "最低": "min",
+                                "收盘": "last",
+                                "成交量": "sum",
+                                "成交额": "sum",
+                                "换手率": "sum",
+                            })
+                            .reset_index(drop=True)
+                        )
+
+                    previous_close = df_res["收盘"].shift(1)
+                    df_res["涨跌额"] = df_res["收盘"] - previous_close
+                    df_res["涨跌幅"] = (df_res["涨跌额"] / previous_close) * 100.0
+                    df_res["振幅"] = ((df_res["最高"] - df_res["最低"]) / previous_close) * 100.0
+                    df_res["日期"] = df_res["日期"].dt.strftime("%Y-%m-%d")
+                    df_res.attrs["provider"] = "tencent"
+                    df_res.attrs["source"] = "akshare"
+                    return df_res
+            except Exception as e:
+                logger.warning("ak.stock_zh_a_hist_tx failed for %s (%s): %s", clean_symbol, clean_period, str(e))
+
+        # 3. Try ak.stock_zh_a_daily (Sina fallback)
         if clean_period == "daily" and hasattr(ak, "stock_zh_a_daily"):
             try:
                 prefix = "sh" if clean_symbol.startswith(("6", "9")) else ("bj" if clean_symbol.startswith(("8", "4", "920")) else "sz")
@@ -390,6 +455,8 @@ class AKShareProvider:
                         df_res = df_res[df_res["日期"] <= end_fmt]
 
                     if not df_res.empty:
+                        df_res.attrs["provider"] = "sina"
+                        df_res.attrs["source"] = "akshare"
                         return df_res
             except Exception as e:
                 logger.error("ak.stock_zh_a_daily failed for %s: %s", clean_symbol, str(e))

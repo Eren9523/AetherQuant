@@ -3,6 +3,8 @@ import { InternalSnapshotData, KlineBar } from './marketTypes';
 
 export interface EnvWithMarket {
   DB: D1Database;
+  DATA_BUCKET?: R2Bucket;
+  /** @deprecated Legacy alias; DATA_BUCKET is the Wrangler binding. */
   BUCKET?: R2Bucket;
   QUANT_SERVICE_URL?: string;
   QUANT_SERVICE_TOKEN?: string;
@@ -111,8 +113,9 @@ export class MarketSyncService {
           'Authorization': `Bearer ${quantToken || ''}`,
           'Accept': 'application/json'
         },
-        // Generous 35-second cold fetch timeout
-        signal: AbortSignal.timeout(35000)
+        // Tencent's full-market AKShare endpoint is paginated and a verified
+        // 5,500-stock fetch can exceed 50 seconds before Render cold start.
+        signal: AbortSignal.timeout(180000)
       });
 
       if (!resp.ok) {
@@ -167,8 +170,10 @@ export class MarketSyncService {
       // 3. Batch insert indices
       await this.repo.batchInsertIndices(snapshotId, indices);
 
-      // 4. Update Instruments table with active symbols asynchronously
-      await this.repo.upsertInstrumentsFromQuotes(stocks);
+      // 4. Do not rewrite the entire instruments table on every snapshot.
+      // Quotes already carry symbol/name/exchange; a separate low-frequency
+      // metadata job can enrich industry and listing date without exhausting
+      // the D1 free-tier write allowance.
 
       // 5. Atomic pointer switch: previous -> active, building -> active
       const currentPointer = await this.repo.getPointer('CN');
@@ -187,7 +192,8 @@ export class MarketSyncService {
 
       // 7. R2 EOD Archive (if closing snapshot)
       let archiveSuccess = 0;
-      if (isEod && this.env.BUCKET) {
+      const dataBucket = this.env.DATA_BUCKET || this.env.BUCKET;
+      if (isEod && dataBucket) {
         try {
           const yyyy = nowIso.substring(0, 4);
           const mm = nowIso.substring(5, 7);
@@ -205,7 +211,7 @@ export class MarketSyncService {
             overview,
             stocks
           });
-          await this.env.BUCKET.put(r2Key, archivePayload, {
+          await dataBucket.put(r2Key, archivePayload, {
             httpMetadata: { contentType: 'application/json' }
           });
           archiveSuccess = 1;

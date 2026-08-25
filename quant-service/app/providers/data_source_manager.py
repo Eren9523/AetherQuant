@@ -8,8 +8,10 @@ import math
 import logging
 import datetime
 import threading
+import concurrent.futures
 from typing import Optional, List, Dict, Any, Tuple
 import pandas as pd
+import requests
 
 from app.core.config import settings
 
@@ -190,72 +192,130 @@ class DataSourceManager:
 
     def _fetch_from_tencent(self) -> Tuple[List[Dict[str, Any]], int]:
         """
-        Fetch full market A-share spot from Tencent via AKShare or high-concurrency board API
+        Fetch full market A-share spot from Tencent through AKShare first.
+        If the sequential AKShare adapter loses a page, use the same public
+        Tencent board endpoint concurrently and label that fallback truthfully.
         """
         import akshare as ak
-        stocks = []
-        quality_warnings = 0
         as_of = datetime.datetime.utcnow().isoformat() + "Z"
 
-        # Try ak.stock_zh_a_spot_tx() first
-        if hasattr(ak, "stock_zh_a_spot_tx"):
-            try:
-                df = ak.stock_zh_a_spot_tx()
-                if df is not None and not df.empty:
-                    for _, row in df.iterrows():
-                        raw_code = str(row.get("code", "")).replace("sh", "").replace("sz", "").replace("bj", "").strip()
-                        if not raw_code:
-                            quality_warnings += 1
-                            continue
-                        symbol = raw_code.zfill(6)
-                        name = str(row.get("name", "")).strip()
+        def normalize_rows(rows: List[Dict[str, Any]], source: str) -> Tuple[List[Dict[str, Any]], int]:
+            stocks: List[Dict[str, Any]] = []
+            quality_warnings = 0
+            for row in rows:
+                raw_code = str(row.get("code", "")).replace("sh", "").replace("sz", "").replace("bj", "").strip()
+                if not raw_code:
+                    quality_warnings += 1
+                    continue
 
-                        last = self._safe_float(row.get("zxj"))
-                        change_pct = self._safe_float(row.get("zdf"))
-                        change = self._safe_float(row.get("zd"))
-                        volume = self._safe_float(row.get("volume"))
-                        turnover = self._safe_float(row.get("turnover"))
-                        turnover_rate = self._safe_float(row.get("hsl"))
-                        amplitude = self._safe_float(row.get("zf"))
-                        pe_dynamic = self._safe_float(row.get("pe_ttm"))
-                        zsz = self._safe_float(row.get("zsz"))
-                        ltsz = self._safe_float(row.get("ltsz"))
-                        total_market_cap = zsz * 100000000.0 if zsz is not None else None
-                        float_market_cap = ltsz * 100000000.0 if ltsz is not None else None
+                symbol = raw_code.zfill(6)
+                last = self._safe_float(row.get("zxj"))
+                change = self._safe_float(row.get("zd"))
+                zsz = self._safe_float(row.get("zsz"))
+                ltsz = self._safe_float(row.get("ltsz"))
+                stocks.append({
+                    "symbol": symbol,
+                    "name": str(row.get("name", "")).strip(),
+                    "market": "CN",
+                    "exchange": self._normalize_exchange(symbol),
+                    "last": last,
+                    # Tencent's board-rank response does not provide OHLC.
+                    # Keep missing values null; never manufacture last-as-OHLC.
+                    "open": None,
+                    "high": None,
+                    "low": None,
+                    "prev_close": (last - change) if last is not None and change is not None else None,
+                    "change": change,
+                    "change_pct": self._safe_float(row.get("zdf")),
+                    "volume": self._safe_float(row.get("volume")),
+                    "turnover": self._safe_float(row.get("turnover")),
+                    "turnover_rate": self._safe_float(row.get("hsl")),
+                    "amplitude": self._safe_float(row.get("zf")),
+                    "pe_dynamic": self._safe_float(row.get("pe_ttm")),
+                    "pb": None,
+                    "total_market_cap": zsz * 100000000.0 if zsz is not None else None,
+                    "float_market_cap": ltsz * 100000000.0 if ltsz is not None else None,
+                    "provider": "tencent",
+                    "source": source,
+                    "as_of": as_of,
+                })
+            return stocks, quality_warnings
 
-                        prev_close = (last - change) if (last is not None and change is not None) else last
+        # Primary path is the real installed AKShare function.
+        if not hasattr(ak, "stock_zh_a_spot_tx"):
+            raise RuntimeError("AKShare interface stock_zh_a_spot_tx is unavailable")
 
-                        exchange = self._normalize_exchange(symbol)
-                        stocks.append({
-                            "symbol": symbol,
-                            "name": name,
-                            "market": "CN",
-                            "exchange": exchange,
-                            "last": last,
-                            "open": last,
-                            "high": last,
-                            "low": last,
-                            "prev_close": prev_close,
-                            "change": change,
-                            "change_pct": change_pct,
-                            "volume": volume,
-                            "turnover": turnover,
-                            "turnover_rate": turnover_rate,
-                            "amplitude": amplitude,
-                            "pe_dynamic": pe_dynamic,
-                            "pb": None,
-                            "total_market_cap": total_market_cap,
-                            "float_market_cap": float_market_cap,
-                            "provider": "tencent",
-                            "source": "akshare",
-                            "as_of": as_of
-                        })
-                    if len(stocks) >= 100:
-                        return stocks, quality_warnings
-            except Exception as e:
-                logger.warning("ak.stock_zh_a_spot_tx exception: %s", str(e))
+        try:
+            df = ak.stock_zh_a_spot_tx()
+            if df is None or df.empty:
+                raise RuntimeError("AKShare Tencent adapter returned an empty DataFrame")
+            stocks, quality_warnings = normalize_rows(df.to_dict("records"), "akshare")
+            if len(stocks) < settings.MARKET_MIN_STOCK_COUNT:
+                raise RuntimeError(
+                    f"AKShare Tencent snapshot incomplete: {len(stocks)} < {settings.MARKET_MIN_STOCK_COUNT}"
+                )
+            return stocks, quality_warnings
+        except Exception as e:
+            logger.warning("AKShare Tencent adapter failed; using labeled Tencent HTTP fallback: %s", str(e))
 
-        raise RuntimeError("Tencent market data stream returned insufficient data")
+        # Reliability fallback: the same public Tencent pages used by AKShare,
+        # fetched concurrently. This path is never mislabeled as AKShare.
+        url = "https://proxy.finance.qq.com/cgi/cgi-bin/rank/hs/getBoardRankList"
+        page_size = 200
+
+        def fetch_page(page: int) -> List[Dict[str, Any]]:
+            response = requests.get(
+                url,
+                params={
+                    "_appver": "11.17.0",
+                    "board_code": "aStock",
+                    "sort_type": "price",
+                    "direct": "down",
+                    "offset": str(page * page_size),
+                    "count": str(page_size),
+                },
+                timeout=(5, 15),
+            )
+            response.raise_for_status()
+            return response.json().get("data", {}).get("rank_list", []) or []
+
+        first_response = requests.get(
+            url,
+            params={
+                "_appver": "11.17.0",
+                "board_code": "aStock",
+                "sort_type": "price",
+                "direct": "down",
+                "offset": "0",
+                "count": str(page_size),
+            },
+            timeout=(5, 15),
+        )
+        first_response.raise_for_status()
+        first_json = first_response.json()
+        total = int(first_json.get("data", {}).get("total", 0) or 0)
+        page_count = math.ceil(total / page_size) if total > 0 else 0
+        if page_count <= 0:
+            raise RuntimeError("Tencent board API returned no total count")
+
+        pages: List[List[Dict[str, Any]]] = [first_json.get("data", {}).get("rank_list", []) or []]
+        if page_count > 1:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                pages.extend(list(executor.map(fetch_page, range(1, page_count))))
+
+        rows_by_code: Dict[str, Dict[str, Any]] = {}
+        for page_rows in pages:
+            for item in page_rows:
+                code = str(item.get("code", "")).replace("sh", "").replace("sz", "").replace("bj", "").strip().zfill(6)
+                if code and code != "000000":
+                    rows_by_code[code] = item
+
+        stocks, quality_warnings = normalize_rows(list(rows_by_code.values()), "tencent_http")
+        if len(stocks) < settings.MARKET_MIN_STOCK_COUNT:
+            raise RuntimeError(
+                f"Tencent HTTP snapshot incomplete: {len(stocks)} < {settings.MARKET_MIN_STOCK_COUNT}"
+            )
+        return stocks, quality_warnings
 
     def _fetch_from_sina(self) -> Tuple[List[Dict[str, Any]], int]:
         """
@@ -412,7 +472,7 @@ class DataSourceManager:
             as_of_iso = datetime.datetime.utcnow().isoformat() + "Z"
             snapshot = {
                 "provider": successful_provider,
-                "source": "akshare",
+                "source": stocks_data[0].get("source", "unknown") if stocks_data else "unknown",
                 "as_of": as_of_iso,
                 "stocks": stocks_data,
                 "indices": indices_data,

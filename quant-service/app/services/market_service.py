@@ -447,6 +447,8 @@ class MarketService:
 
         bars: List[KLineBar] = []
         quality_warnings = 0
+        data_source = str(df.attrs.get("source", "akshare"))
+        data_provider = str(df.attrs.get("provider", "unknown"))
 
         for _, row in df.iterrows():
             raw_date = row.get("日期", "")
@@ -493,8 +495,8 @@ class MarketService:
             start_date=start_date,
             end_date=end_date,
             as_of=as_of_time,
-            source="akshare",
-            provider="eastmoney",
+            source=data_source,
+            provider=data_provider,
             cached=is_cached,
             quality_warnings_count=quality_warnings,
             bars=bars

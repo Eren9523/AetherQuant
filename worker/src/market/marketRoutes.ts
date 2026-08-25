@@ -21,6 +21,21 @@ export function createMarketRouter() {
     name: 'name'
   };
 
+  function scheduleStartupSync(c: any): void {
+    const task = new MarketSyncService(c.env).runSync('startup').then(result => {
+      if (!result.success && result.error !== 'SYNC_ALREADY_RUNNING') {
+        console.error('[Market Startup Sync] failed:', result.error);
+      }
+    });
+    try {
+      c.executionCtx.waitUntil(task);
+    } catch {
+      // The Node convenience server has no real ExecutionContext. Its process
+      // remains alive, so the referenced promise can complete normally.
+      task.catch(() => {});
+    }
+  }
+
   /**
    * Helper: Determine if a snapshot is stale based on trading hours
    */
@@ -102,8 +117,7 @@ export function createMarketRouter() {
     const activeId = pointer?.active_snapshot_id;
 
     if (!activeId) {
-      const syncService = new MarketSyncService(c.env);
-      syncService.runSync('startup').catch(() => {});
+      scheduleStartupSync(c);
 
       return c.json({
         success: true,
@@ -181,12 +195,16 @@ export function createMarketRouter() {
 
     const whereSql = whereClauses.join(' AND ');
 
-    // 1. Total Count query
-    const countSql = `SELECT COUNT(*) as total FROM market_quotes_snapshot WHERE ${whereSql}`;
-    const countRes = await c.env.DB.prepare(countSql).bind(...params).first<{ total: number }>();
-    const total = countRes?.total || 0;
+    // Avoid scanning the active snapshot for every unfiltered page request.
+    const hasFilters = Boolean(search || exchange || symbolsParam);
+    let total = snapshot.stock_count || 0;
+    if (hasFilters) {
+      const countSql = `SELECT COUNT(*) as total FROM market_quotes_snapshot WHERE ${whereSql}`;
+      const countRes = await c.env.DB.prepare(countSql).bind(...params).first<{ total: number }>();
+      total = countRes?.total || 0;
+    }
 
-    // 2. Data rows query with NULLS LAST emulation
+    // 2. Data rows query. Keep ORDER BY index-friendly for the D1 free tier.
     const offset = (page - 1) * pageSize;
     const querySql = `
       SELECT
@@ -197,9 +215,7 @@ export function createMarketRouter() {
         provider, source, as_of
       FROM market_quotes_snapshot
       WHERE ${whereSql}
-      ORDER BY
-        CASE WHEN ${sortColumn} IS NULL THEN 1 ELSE 0 END ASC,
-        ${sortColumn} ${sortDirection}
+      ORDER BY ${sortColumn} ${sortDirection}
       LIMIT ? OFFSET ?
     `;
 
@@ -235,8 +251,7 @@ export function createMarketRouter() {
     const active = await repo.getActiveSnapshot('CN');
 
     if (!active) {
-      const syncService = new MarketSyncService(c.env);
-      syncService.runSync('startup').catch(() => {});
+      scheduleStartupSync(c);
 
       return c.json({
         success: true,
@@ -291,8 +306,7 @@ export function createMarketRouter() {
     const activeId = pointer?.active_snapshot_id;
 
     if (!activeId) {
-      const syncService = new MarketSyncService(c.env);
-      syncService.runSync('startup').catch(() => {});
+      scheduleStartupSync(c);
 
       return c.json({
         success: true,
@@ -361,7 +375,7 @@ export function createMarketRouter() {
           q.change, q.change_pct, q.volume, q.turnover, q.turnover_rate,
           q.amplitude, q.pe_dynamic, q.pb, q.total_market_cap, q.float_market_cap,
           q.provider, q.source, q.as_of,
-          i.industry, i.listing_date
+          i.industry
         FROM market_quotes_snapshot q
         LEFT JOIN instruments i ON q.symbol = i.symbol
         WHERE q.snapshot_id = ? AND q.symbol = ?
@@ -395,7 +409,7 @@ export function createMarketRouter() {
             total_market_cap: row.total_market_cap,
             float_market_cap: row.float_market_cap,
             industry: row.industry || (row.exchange === 'SH' ? '沪市主板' : (row.exchange === 'SZ' ? '深市主板' : '北交所')),
-            listing_date: row.listing_date,
+            listing_date: null,
             as_of: row.as_of,
             provider: row.provider,
             source: row.source || 'akshare',

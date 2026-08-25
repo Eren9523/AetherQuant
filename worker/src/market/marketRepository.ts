@@ -14,180 +14,45 @@ export class MarketRepository {
 
   async ensureSchema(): Promise<void> {
     if (MarketRepository.schemaInitialized) return;
+    const requiredTables = [
+      'market_snapshots',
+      'market_snapshot_pointer',
+      'market_quotes_snapshot',
+      'market_indices_snapshot',
+      'market_kline_manifest',
+      'market_sync_jobs',
+      'market_sync_lock'
+    ];
+
+    const placeholders = requiredTables.map(() => '?').join(', ');
     try {
-      await this.db.exec(`
-        CREATE TABLE IF NOT EXISTS market_snapshots (
-          id TEXT PRIMARY KEY,
-          market TEXT NOT NULL,
-          status TEXT NOT NULL,
-          provider TEXT,
-          source TEXT,
-          as_of TEXT,
-          stock_count INTEGER DEFAULT 0,
-          up_count INTEGER DEFAULT 0,
-          down_count INTEGER DEFAULT 0,
-          flat_count INTEGER DEFAULT 0,
-          limit_up_count INTEGER DEFAULT 0,
-          limit_down_count INTEGER DEFAULT 0,
-          total_turnover REAL,
-          avg_change_pct REAL,
-          quality_warnings_count INTEGER DEFAULT 0,
-          is_eod INTEGER DEFAULT 0,
-          created_at TEXT NOT NULL,
-          activated_at TEXT,
-          error_code TEXT,
-          error_message TEXT
-        );
+      const result = await this.db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${placeholders})`)
+        .bind(...requiredTables)
+        .all<{ name: string }>();
+      const existing = new Set((result.results || []).map(row => row.name));
+      const missing = requiredTables.filter(table => !existing.has(table));
 
-        CREATE INDEX IF NOT EXISTS idx_market_snapshots_market_status ON market_snapshots(market, status, created_at);
+      if (missing.length > 0) {
+        throw new Error(`missing tables: ${missing.join(', ')}`);
+      }
 
-        CREATE TABLE IF NOT EXISTS market_snapshot_pointer (
-          market TEXT PRIMARY KEY,
-          active_snapshot_id TEXT,
-          previous_snapshot_id TEXT,
-          updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS market_quotes_snapshot (
-          snapshot_id TEXT NOT NULL,
-          symbol TEXT NOT NULL,
-          name TEXT NOT NULL,
-          market TEXT NOT NULL,
-          exchange TEXT,
-          last REAL,
-          open REAL,
-          high REAL,
-          low REAL,
-          prev_close REAL,
-          change REAL,
-          change_pct REAL,
-          volume REAL,
-          turnover REAL,
-          turnover_rate REAL,
-          amplitude REAL,
-          pe_dynamic REAL,
-          pb REAL,
-          total_market_cap REAL,
-          float_market_cap REAL,
-          provider TEXT,
-          source TEXT,
-          as_of TEXT,
-          PRIMARY KEY(snapshot_id, symbol)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_mqs_snapshot_id ON market_quotes_snapshot(snapshot_id);
-        CREATE INDEX IF NOT EXISTS idx_mqs_snapshot_symbol ON market_quotes_snapshot(snapshot_id, symbol);
-        CREATE INDEX IF NOT EXISTS idx_mqs_snapshot_exchange ON market_quotes_snapshot(snapshot_id, exchange);
-        CREATE INDEX IF NOT EXISTS idx_mqs_snapshot_change_pct ON market_quotes_snapshot(snapshot_id, change_pct);
-        CREATE INDEX IF NOT EXISTS idx_mqs_snapshot_turnover ON market_quotes_snapshot(snapshot_id, turnover);
-
-        CREATE TABLE IF NOT EXISTS market_indices_snapshot (
-          snapshot_id TEXT NOT NULL,
-          symbol TEXT NOT NULL,
-          name TEXT NOT NULL,
-          last REAL,
-          open REAL,
-          high REAL,
-          low REAL,
-          prev_close REAL,
-          change REAL,
-          change_pct REAL,
-          volume REAL,
-          turnover REAL,
-          provider TEXT,
-          source TEXT,
-          as_of TEXT,
-          PRIMARY KEY(snapshot_id, symbol)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_mis_snapshot_id ON market_indices_snapshot(snapshot_id);
-
-        CREATE TABLE IF NOT EXISTS instruments (
-          symbol TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          market TEXT NOT NULL,
-          exchange TEXT NOT NULL,
-          currency TEXT NOT NULL DEFAULT 'CNY',
-          asset_type TEXT NOT NULL DEFAULT 'stock',
-          sector TEXT,
-          industry TEXT,
-          listing_date TEXT,
-          provider TEXT,
-          is_active INTEGER NOT NULL DEFAULT 1,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_instruments_market_exchange ON instruments(market, exchange);
-
-        CREATE TABLE IF NOT EXISTS market_kline_manifest (
-          symbol TEXT NOT NULL,
-          interval TEXT NOT NULL,
-          adjust TEXT NOT NULL,
-          r2_key TEXT NOT NULL,
-          bars_count INTEGER DEFAULT 0,
-          start_time TEXT,
-          end_time TEXT,
-          provider TEXT,
-          source TEXT,
-          as_of TEXT,
-          stale INTEGER DEFAULT 0,
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY(symbol, interval, adjust)
-        );
-
-        CREATE TABLE IF NOT EXISTS market_sync_jobs (
-          id TEXT PRIMARY KEY,
-          job_type TEXT,
-          market TEXT,
-          status TEXT,
-          provider TEXT,
-          started_at TEXT NOT NULL,
-          finished_at TEXT,
-          snapshot_id TEXT,
-          rows_received INTEGER DEFAULT 0,
-          rows_written INTEGER DEFAULT 0,
-          quality_warnings_count INTEGER DEFAULT 0,
-          error_code TEXT,
-          error_message TEXT,
-          trigger_source TEXT,
-          snapshot_success INTEGER DEFAULT 0,
-          archive_success INTEGER DEFAULT 0
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_msj_status_started ON market_sync_jobs(status, started_at);
-
-        CREATE TABLE IF NOT EXISTS market_sync_lock (
-          lock_name TEXT PRIMARY KEY,
-          owner_id TEXT,
-          locked_until TEXT,
-          updated_at TEXT
-        );
-      `);
       MarketRepository.schemaInitialized = true;
     } catch (e: any) {
-      console.warn('[MarketRepository] ensureSchema note:', e?.message || e);
+      throw new Error(
+        `MARKET_SCHEMA_NOT_MIGRATED: ${e?.message || String(e)}. ` +
+        'Run the checked-in D1 migrations before starting the application.'
+      );
     }
   }
 
   async getPointer(market: string = 'CN'): Promise<MarketSnapshotPointerRecord | null> {
-    try {
-      const result = await this.db
-        .prepare('SELECT * FROM market_snapshot_pointer WHERE market = ?')
-        .bind(market)
-        .first<MarketSnapshotPointerRecord>();
-      return result || null;
-    } catch (err: any) {
-      if (err.message?.includes('no such table')) {
-        await this.ensureSchema();
-        const result = await this.db
-          .prepare('SELECT * FROM market_snapshot_pointer WHERE market = ?')
-          .bind(market)
-          .first<MarketSnapshotPointerRecord>();
-        return result || null;
-      }
-      throw err;
-    }
+    await this.ensureSchema();
+    const result = await this.db
+      .prepare('SELECT * FROM market_snapshot_pointer WHERE market = ?')
+      .bind(market)
+      .first<MarketSnapshotPointerRecord>();
+    return result || null;
   }
 
   async setPointer(market: string, activeId: string, previousId: string | null): Promise<void> {
@@ -274,54 +139,73 @@ export class MarketRepository {
   async batchInsertQuotes(snapshotId: string, quotes: Partial<StockQuoteSnapshotRecord>[]): Promise<number> {
     if (!quotes || quotes.length === 0) return 0;
 
-    const BATCH_SIZE = 100;
+    // One JSON1 INSERT writes many rows with one D1 binding call. This keeps a
+    // 5,500-stock snapshot inside the Worker free-tier subrequest budget and
+    // is substantially faster than executing thousands of INSERT statements.
+    const BATCH_SIZE = 200;
     let written = 0;
 
     for (let i = 0; i < quotes.length; i += BATCH_SIZE) {
       const chunk = quotes.slice(i, i + BATCH_SIZE);
-      const stmts = chunk.map(q => {
-        return this.db.prepare(`
-          INSERT INTO market_quotes_snapshot (
-            snapshot_id, symbol, name, market, exchange,
-            last, open, high, low, prev_close,
-            change, change_pct, volume, turnover, turnover_rate,
-            amplitude, pe_dynamic, pb, total_market_cap, float_market_cap,
-            provider, source, as_of
-          ) VALUES (
-            ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?,
-            ?, ?, ?
-          )
-        `).bind(
-          snapshotId,
-          q.symbol,
-          q.name,
-          q.market || 'CN',
-          q.exchange || null,
-          q.last ?? null,
-          q.open ?? null,
-          q.high ?? null,
-          q.low ?? null,
-          q.prev_close ?? null,
-          q.change ?? null,
-          q.change_pct ?? null,
-          q.volume ?? null,
-          q.turnover ?? null,
-          q.turnover_rate ?? null,
-          q.amplitude ?? null,
-          q.pe_dynamic ?? null,
-          q.pb ?? null,
-          q.total_market_cap ?? null,
-          q.float_market_cap ?? null,
-          q.provider || null,
-          q.source || 'akshare',
-          q.as_of || null
-        );
-      });
+      const payload = JSON.stringify(chunk.map(q => ({
+        symbol: q.symbol,
+        name: q.name,
+        market: q.market || 'CN',
+        exchange: q.exchange || null,
+        last: q.last ?? null,
+        open: q.open ?? null,
+        high: q.high ?? null,
+        low: q.low ?? null,
+        prev_close: q.prev_close ?? null,
+        change: q.change ?? null,
+        change_pct: q.change_pct ?? null,
+        volume: q.volume ?? null,
+        turnover: q.turnover ?? null,
+        turnover_rate: q.turnover_rate ?? null,
+        amplitude: q.amplitude ?? null,
+        pe_dynamic: q.pe_dynamic ?? null,
+        pb: q.pb ?? null,
+        total_market_cap: q.total_market_cap ?? null,
+        float_market_cap: q.float_market_cap ?? null,
+        provider: q.provider || null,
+        source: q.source || 'akshare',
+        as_of: q.as_of || null
+      })));
 
-      await this.db.batch(stmts);
+      await this.db.prepare(`
+        INSERT INTO market_quotes_snapshot (
+          snapshot_id, symbol, name, market, exchange,
+          last, open, high, low, prev_close,
+          change, change_pct, volume, turnover, turnover_rate,
+          amplitude, pe_dynamic, pb, total_market_cap, float_market_cap,
+          provider, source, as_of
+        )
+        SELECT
+          ?,
+          json_extract(value, '$.symbol'),
+          json_extract(value, '$.name'),
+          json_extract(value, '$.market'),
+          json_extract(value, '$.exchange'),
+          json_extract(value, '$.last'),
+          json_extract(value, '$.open'),
+          json_extract(value, '$.high'),
+          json_extract(value, '$.low'),
+          json_extract(value, '$.prev_close'),
+          json_extract(value, '$.change'),
+          json_extract(value, '$.change_pct'),
+          json_extract(value, '$.volume'),
+          json_extract(value, '$.turnover'),
+          json_extract(value, '$.turnover_rate'),
+          json_extract(value, '$.amplitude'),
+          json_extract(value, '$.pe_dynamic'),
+          json_extract(value, '$.pb'),
+          json_extract(value, '$.total_market_cap'),
+          json_extract(value, '$.float_market_cap'),
+          json_extract(value, '$.provider'),
+          json_extract(value, '$.source'),
+          json_extract(value, '$.as_of')
+        FROM json_each(?)
+      `).bind(snapshotId, payload).run();
       written += chunk.length;
     }
 
@@ -375,19 +259,17 @@ export class MarketRepository {
       const chunk = quotes.slice(i, i + BATCH_SIZE);
       const stmts = chunk.map(q => {
         return this.db.prepare(`
-          INSERT INTO instruments (symbol, name, market, exchange, provider, is_active, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+          INSERT INTO instruments (symbol, name, market, exchange, is_active, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 1, ?, ?)
           ON CONFLICT(symbol) DO UPDATE SET
             name = excluded.name,
             exchange = excluded.exchange,
-            provider = excluded.provider,
             updated_at = excluded.updated_at
         `).bind(
           q.symbol,
           q.name,
           q.market || 'CN',
           q.exchange || 'SH',
-          q.provider || 'eastmoney',
           now,
           now
         );
