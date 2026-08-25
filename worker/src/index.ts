@@ -37,7 +37,7 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>();
  * Strict Whitelist Policy: only allows exact APP_ORIGIN, exact ALLOWED_ORIGINS list, same-origin, and local development origins.
  * Platform wildcards (*.pages.dev, *.workers.dev, *.run.app, etc.) are strictly prohibited.
  */
-export function isAllowedOrigin(origin: string | undefined | null, env: Bindings, requestUrl?: string): boolean {
+export function isAllowedOrigin(origin: string | undefined | null, env: Bindings, requestUrl?: string, hostHeader?: string): boolean {
   if (!origin) return false;
 
   // 1. Same origin as request URL
@@ -45,6 +45,17 @@ export function isAllowedOrigin(origin: string | undefined | null, env: Bindings
     try {
       const u = new URL(requestUrl);
       if (origin === u.origin) return true;
+    } catch {}
+  }
+
+  // 1b. Same origin as Host / X-Forwarded-Host header (for reverse proxy & cloud environments)
+  if (hostHeader) {
+    try {
+      const cleanHost = hostHeader.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+      const originUrl = new URL(origin);
+      if (originUrl.host === cleanHost) {
+        return true;
+      }
     } catch {}
   }
 
@@ -88,8 +99,9 @@ app.use('*', async (c, next) => {
 // 2. Strict CORS Middleware
 app.use('*', async (c, next) => {
   const origin = c.req.header('origin');
+  const host = c.req.header('x-forwarded-host') || c.req.header('host');
   
-  if (origin && isAllowedOrigin(origin, c.env, c.req.url)) {
+  if (origin && isAllowedOrigin(origin, c.env, c.req.url, host)) {
     c.header('Access-Control-Allow-Origin', origin);
     c.header('Access-Control-Allow-Credentials', 'true');
     c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
@@ -109,9 +121,10 @@ app.use('*', async (c, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     const origin = c.req.header('origin');
     const secFetchSite = c.req.header('sec-fetch-site');
+    const host = c.req.header('x-forwarded-host') || c.req.header('host');
 
     // Layer 1: If Sec-Fetch-Site is explicit cross-site and origin is unauthorized or absent
-    if (secFetchSite === 'cross-site' && (!origin || !isAllowedOrigin(origin, c.env, c.req.url))) {
+    if (secFetchSite === 'cross-site' && (!origin || !isAllowedOrigin(origin, c.env, c.req.url, host))) {
       const errorResp: ApiErrorResponse = {
         success: false,
         error: {
@@ -124,7 +137,7 @@ app.use('*', async (c, next) => {
     }
 
     // Layer 2: Validate Origin against strict whitelist if Origin header is present
-    if (origin && !isAllowedOrigin(origin, c.env, c.req.url)) {
+    if (origin && !isAllowedOrigin(origin, c.env, c.req.url, host)) {
       const errorResp: ApiErrorResponse = {
         success: false,
         error: {

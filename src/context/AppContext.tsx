@@ -94,15 +94,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setIsAuthModalOpen(true);
   };
 
+  const pendingAuthCallbackRef = React.useRef<(() => void) | null>(null);
+
   /**
-   * Action guard: returns true & runs callback if logged in,
-   * otherwise opens login modal and returns false.
+   * Action guard: returns true if already authenticated.
+   * If not authenticated, registers the callback to execute after login, opens login modal, and returns false.
    */
   const requireAuth = (callback?: () => void): boolean => {
     if (isAuthenticated) {
-      if (callback) callback();
       return true;
     }
+    pendingAuthCallbackRef.current = callback || null;
     openAuthModal('login');
     return false;
   };
@@ -113,6 +115,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUser(res.user);
       setIsAuthenticated(true);
       setIsAuthModalOpen(false);
+      if (pendingAuthCallbackRef.current) {
+        const cb = pendingAuthCallbackRef.current;
+        pendingAuthCallbackRef.current = null;
+        try {
+          cb();
+        } catch (e) {
+          console.warn('Error executing pending auth callback after login:', e);
+        }
+      }
       return { success: true };
     }
     return { success: false, error: formatErrorMessage(res.error, '登录失败') };
@@ -124,6 +135,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setCurrentUser(res.user);
       setIsAuthenticated(true);
       setIsAuthModalOpen(false);
+      if (pendingAuthCallbackRef.current) {
+        const cb = pendingAuthCallbackRef.current;
+        pendingAuthCallbackRef.current = null;
+        try {
+          cb();
+        } catch (e) {
+          console.warn('Error executing pending auth callback after registration:', e);
+        }
+      }
       return { success: true };
     }
     return { success: false, error: formatErrorMessage(res.error, '注册失败') };

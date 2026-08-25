@@ -67,11 +67,13 @@ export class WorkerAuthService {
 
     try {
       const now = new Date().toISOString();
+
+      // 1. Ensure users table exists
       await db
         .prepare(
           `CREATE TABLE IF NOT EXISTS users (
              id TEXT PRIMARY KEY,
-             username TEXT UNIQUE NOT NULL,
+             username TEXT UNIQUE,
              email TEXT UNIQUE NOT NULL,
              name TEXT NOT NULL,
              role TEXT NOT NULL DEFAULT 'free',
@@ -86,6 +88,24 @@ export class WorkerAuthService {
         )
         .run();
 
+      // Ensure missing columns on users if table already existed without them
+      const userColumns = [
+        'username TEXT',
+        'department TEXT',
+        'account_type TEXT DEFAULT \'Standard\'',
+        'status TEXT DEFAULT \'active\'',
+        'last_login TEXT'
+      ];
+      for (const colDef of userColumns) {
+        const colName = colDef.split(' ')[0];
+        try {
+          await db.prepare(`ALTER TABLE users ADD COLUMN ${colDef}`).run();
+        } catch (e: any) {
+          // ignore duplicate column errors
+        }
+      }
+
+      // 2. Ensure user_credentials table exists
       await db
         .prepare(
           `CREATE TABLE IF NOT EXISTS user_credentials (
@@ -100,19 +120,32 @@ export class WorkerAuthService {
         )
         .run();
 
+      // 3. Ensure sessions table exists
       await db
         .prepare(
           `CREATE TABLE IF NOT EXISTS sessions (
              id TEXT PRIMARY KEY,
              user_id TEXT NOT NULL,
-             username TEXT NOT NULL,
-             token TEXT UNIQUE NOT NULL,
+             username TEXT,
+             token TEXT UNIQUE,
+             token_hash TEXT,
              expires_at TEXT NOT NULL,
              created_at TEXT NOT NULL
            )`
         )
         .run();
 
+      // Ensure missing columns on sessions if table already existed without them
+      const sessionColumns = ['username TEXT', 'token TEXT', 'token_hash TEXT'];
+      for (const colDef of sessionColumns) {
+        try {
+          await db.prepare(`ALTER TABLE sessions ADD COLUMN ${colDef}`).run();
+        } catch (e: any) {
+          // ignore duplicate column errors
+        }
+      }
+
+      // 4. Ensure research persistence tables exist
       await db
         .prepare(
           `CREATE TABLE IF NOT EXISTS research_threads (
@@ -244,10 +277,10 @@ export class WorkerAuthService {
 
             await db
               .prepare(
-                `INSERT INTO sessions (id, user_id, username, token, expires_at, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?)`
+                `INSERT INTO sessions (id, user_id, username, token, token_hash, expires_at, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`
               )
-              .bind(`sess_${Date.now()}`, cred.user_id, cred.username, token, expiresAt, now)
+              .bind(`sess_${Date.now()}`, cred.user_id, cred.username, token, token, expiresAt, now)
               .run();
 
             await db
@@ -406,10 +439,10 @@ export class WorkerAuthService {
 
         await db
           .prepare(
-            `INSERT INTO sessions (id, user_id, username, token, expires_at, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`
+            `INSERT INTO sessions (id, user_id, username, token, token_hash, expires_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
           )
-          .bind(`sess_${Date.now()}`, userId, username, token, expiresAt, now)
+          .bind(`sess_${Date.now()}`, userId, username, token, token, expiresAt, now)
           .run();
 
         return { success: true, user: userProfile, token };
@@ -552,8 +585,8 @@ export class WorkerAuthService {
       await this.initD1(db);
       try {
         const sess = await db
-          .prepare(`SELECT * FROM sessions WHERE token = ?`)
-          .bind(token)
+          .prepare(`SELECT * FROM sessions WHERE token = ? OR token_hash = ?`)
+          .bind(token, token)
           .first<any>();
 
         if (sess) {
@@ -632,7 +665,7 @@ export class WorkerAuthService {
     if (db && token) {
       await this.initD1(db);
       try {
-        await db.prepare(`DELETE FROM sessions WHERE token = ?`).bind(token).run();
+        await db.prepare(`DELETE FROM sessions WHERE token = ? OR token_hash = ?`).bind(token, token).run();
       } catch {}
     }
     if (token) {

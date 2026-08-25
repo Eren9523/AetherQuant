@@ -4,18 +4,36 @@
 -- 1. Users & Sessions
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
+  username TEXT UNIQUE,
   email TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'free', -- guest | free | pro | admin
+  department TEXT,
+  account_type TEXT DEFAULT 'Standard',
   avatar_url TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  last_login TEXT
+);
+
+CREATE TABLE IF NOT EXISTS user_credentials (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  salt TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'free',
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
-  token_hash TEXT NOT NULL,
+  username TEXT,
+  token TEXT UNIQUE,
+  token_hash TEXT,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

@@ -540,11 +540,27 @@ export const AIResearchView: React.FC = () => {
       });
       if (composerRef.current) composerRef.current.focus();
     } catch (e) {
-      console.error('Failed to create thread:', e);
+      console.warn('Backend thread creation fallback to local session:', e);
       const fallbackId = `thread_${Date.now()}`;
       setCurrentThreadId(fallbackId);
       setMessages([]);
       saveCachedMessages(currentUserId, fallbackId, []);
+
+      const newThreadItem = {
+        id: fallbackId,
+        title: '新量化研究',
+        active_symbol: selectedStockSymbol,
+        last_message_at: new Date().toISOString(),
+        pinned: false,
+        message_count: 0,
+      };
+
+      setThreadsList((prev) => {
+        const updated = [newThreadItem, ...prev.filter((t) => t.id !== fallbackId)];
+        saveCachedThreads(currentUserId, updated);
+        return updated;
+      });
+      if (composerRef.current) composerRef.current.focus();
     }
   };
 
