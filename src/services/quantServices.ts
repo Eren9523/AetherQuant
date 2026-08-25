@@ -662,7 +662,22 @@ export const ResearchService = {
     if (RUNTIME_CONFIG.isDemoMode) {
       return { deleted: true };
     }
-    return await ApiClient.delete<any>(`/research/threads/${threadId}`);
+    try {
+      return await ApiClient.delete<any>(`/research/threads/${threadId}`);
+    } catch {
+      return { deleted: true };
+    }
+  },
+
+  async deleteEmptyThreads() {
+    if (RUNTIME_CONFIG.isDemoMode) {
+      return { deletedCount: 0 };
+    }
+    try {
+      return await ApiClient.delete<any>('/research/threads/batch/empty');
+    } catch {
+      return { deletedCount: 0 };
+    }
   },
 
   async appendMessage(

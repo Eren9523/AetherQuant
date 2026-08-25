@@ -369,13 +369,15 @@ export const AIResearchView: React.FC = () => {
 
     const currentUserId = currentUser.id;
 
-    // 1. Instant optimistic restore from user-scoped local cache
+    // 1. Instant optimistic restore from user-scoped local cache (filter out legacy 0-message ghost drafts)
     const cachedThreads = getCachedThreads(currentUserId);
-    const cleanedCached = cachedThreads.map((t) => {
-      let cleanTitle = t.title || '新量化研究';
-      if (cleanTitle.startsWith('0 ')) cleanTitle = cleanTitle.slice(2).trim();
-      return { ...t, title: cleanTitle, pinned: Boolean(t.pinned) };
-    });
+    const cleanedCached = cachedThreads
+      .filter((t) => t && t.id && (t.message_count === undefined || t.message_count > 0 || t.title !== '新量化研究'))
+      .map((t) => {
+        let cleanTitle = t.title || '新量化研究';
+        if (cleanTitle.startsWith('0 ')) cleanTitle = cleanTitle.slice(2).trim();
+        return { ...t, title: cleanTitle, pinned: Boolean(t.pinned) };
+      });
 
     if (cleanedCached && cleanedCached.length > 0) {
       setThreadsList(cleanedCached);
@@ -392,11 +394,14 @@ export const AIResearchView: React.FC = () => {
     try {
       const fetchedThreads = await ResearchService.getThreads(historySearch, 40);
       if (fetchedThreads && fetchedThreads.length > 0) {
-        const normalized = fetchedThreads.map((t: any) => {
-          let cleanTitle = t.title || '新量化研究';
-          if (cleanTitle.startsWith('0 ')) cleanTitle = cleanTitle.slice(2).trim();
-          return { ...t, title: cleanTitle, pinned: Boolean(t.pinned) };
-        });
+        const normalized = fetchedThreads
+          .filter((t: any) => t && t.id && (t.message_count === undefined || t.message_count > 0 || t.title !== '新量化研究会话'))
+          .map((t: any) => {
+            let cleanTitle = t.title || '新量化研究';
+            if (cleanTitle.startsWith('0 ')) cleanTitle = cleanTitle.slice(2).trim();
+            return { ...t, title: cleanTitle, pinned: Boolean(t.pinned) };
+          });
+
         setThreadsList(normalized);
         saveCachedThreads(currentUserId, normalized);
         const firstThread = normalized[0];
@@ -501,66 +506,17 @@ export const AIResearchView: React.FC = () => {
     }
   };
 
-  const createNewThread = async () => {
+  const createNewThread = () => {
     if (!requireAuth(() => createNewThread())) {
       return;
     }
 
-    const currentUserId = currentUser?.id;
-
-    // If the current active thread is already blank with 0 messages, just reuse it
-    if (currentThreadId && messages.length === 0) {
-      if (composerRef.current) composerRef.current.focus();
-      return;
-    }
-
-    try {
-      const created = await ResearchService.createThread({
-        title: '新量化研究',
-        activeSymbol: selectedStockSymbol,
-      });
-      const newId = created?.id || `thread_${Date.now()}`;
-      setCurrentThreadId(newId);
-      setMessages([]);
-      saveCachedMessages(currentUserId, newId, []);
-
-      const newThreadItem = {
-        id: newId,
-        title: '新量化研究',
-        active_symbol: selectedStockSymbol,
-        last_message_at: new Date().toISOString(),
-        pinned: false,
-        message_count: 0,
-      };
-
-      setThreadsList((prev) => {
-        const updated = [newThreadItem, ...prev.filter((t) => t.id !== newId)];
-        saveCachedThreads(currentUserId, updated);
-        return updated;
-      });
-      if (composerRef.current) composerRef.current.focus();
-    } catch (e) {
-      console.warn('Backend thread creation fallback to local session:', e);
-      const fallbackId = `thread_${Date.now()}`;
-      setCurrentThreadId(fallbackId);
-      setMessages([]);
-      saveCachedMessages(currentUserId, fallbackId, []);
-
-      const newThreadItem = {
-        id: fallbackId,
-        title: '新量化研究',
-        active_symbol: selectedStockSymbol,
-        last_message_at: new Date().toISOString(),
-        pinned: false,
-        message_count: 0,
-      };
-
-      setThreadsList((prev) => {
-        const updated = [newThreadItem, ...prev.filter((t) => t.id !== fallbackId)];
-        saveCachedThreads(currentUserId, updated);
-        return updated;
-      });
-      if (composerRef.current) composerRef.current.focus();
+    // Modern Draft Chat pattern: Reset active thread to a new blank draft without polluting database with empty sessions
+    setCurrentThreadId('');
+    setMessages([]);
+    setInputPrompt('');
+    if (composerRef.current) {
+      composerRef.current.focus();
     }
   };
 
@@ -773,16 +729,46 @@ export const AIResearchView: React.FC = () => {
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
     const currentUserId = currentUser?.id;
-    await ResearchService.deleteThread(threadId);
+
+    // 1. Instantly update UI and clean localStorage cache
     setThreadsList((prev) => {
       const updated = prev.filter((t) => t.id !== threadId);
       saveCachedThreads(currentUserId, updated);
       return updated;
     });
 
+    try {
+      localStorage.removeItem(`aetherquant_msgs_v3_${currentUserId}_${threadId}`);
+    } catch {}
+
     if (currentThreadId === threadId) {
       setCurrentThreadId('');
       setMessages([]);
+    }
+
+    // 2. Call backend in background with error tolerance
+    try {
+      await ResearchService.deleteThread(threadId);
+    } catch (err) {
+      console.warn('Backend delete thread returned error (handled gracefully):', err);
+    }
+  };
+
+  const handleClearEmptyThreads = async (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const currentUserId = currentUser?.id;
+
+    // Remove all 0-message threads from local state
+    setThreadsList((prev) => {
+      const updated = prev.filter((t) => (t.message_count && t.message_count > 0) || t.id === currentThreadId);
+      saveCachedThreads(currentUserId, updated);
+      return updated;
+    });
+
+    try {
+      await ResearchService.deleteEmptyThreads();
+    } catch (err) {
+      console.warn('Backend delete empty threads returned error:', err);
     }
   };
 
@@ -992,9 +978,21 @@ export const AIResearchView: React.FC = () => {
                   <Clock className="w-3.5 h-3.5 text-slate-500" />
                   历史记录
                 </span>
-                <span className="font-mono text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 font-bold">
-                  D1+R2 持久化
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {threadsList.some((t) => (!t.message_count || t.message_count === 0) && t.id !== currentThreadId) && (
+                    <button
+                      onClick={handleClearEmptyThreads}
+                      title="清理所有空白会话"
+                      className="text-[10px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 px-1.5 py-0.5 rounded transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                      <span>清理空白</span>
+                    </button>
+                  )}
+                  <span className="font-mono text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 font-bold">
+                    D1+R2 持久化
+                  </span>
+                </div>
               </div>
 
               {/* Quick Action: New Thread in Sidebar */}
