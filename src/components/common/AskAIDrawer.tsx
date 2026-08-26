@@ -55,7 +55,8 @@ export const AskAIDrawer: React.FC = () => {
     setLoading(true);
 
     try {
-      const res = await ResearchService.queryAI(textToSend, selectedStockSymbol);
+      const contextSymbol = workspaceView === 'stock-detail' ? selectedStockSymbol : undefined;
+      const res = await ResearchService.queryAI(textToSend, contextSymbol);
       setMessages((prev) => [
         ...prev,
         {

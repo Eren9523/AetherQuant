@@ -2,6 +2,7 @@ import React from 'react';
 import { useApp } from '../../context/AppContext';
 import { Sparkles, ArrowRight, Github, LogIn, UserPlus, LogOut, User, ShieldCheck } from 'lucide-react';
 import { PenguinLogo } from '../common/PenguinLogo';
+import { generateInitialAvatar } from '../../services/userService';
 
 export const LandingHeader: React.FC = () => {
   const { enterWorkspaceWithTransition, isAuthenticated, currentUser, openAuthModal, logout } = useApp();
@@ -49,11 +50,11 @@ export const LandingHeader: React.FC = () => {
                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 transition-all text-neutral-800 text-xs font-medium"
               >
                 <img
-                  src={currentUser.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`}
+                  src={currentUser.avatar || generateInitialAvatar(currentUser.name || currentUser.username)}
                   alt={currentUser.name}
                   className="w-5 h-5 rounded-full border border-neutral-300 object-cover"
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                    (e.currentTarget as HTMLImageElement).src = generateInitialAvatar(currentUser.name || currentUser.username);
                   }}
                 />
                 <span className="max-w-[80px] truncate">{currentUser.name}</span>

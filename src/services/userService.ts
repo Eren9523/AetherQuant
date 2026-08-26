@@ -47,11 +47,42 @@ export const AVATAR_PRESETS = [
   { id: 'avatar_8', name: '系统管理员', url: 'https://api.dicebear.com/7.x/open-peeps/svg?seed=Sam&backgroundColor=f8fafc' },
 ];
 
+/**
+ * Generate a standalone offline-resilient SVG avatar (Data URI) based on user name/initials
+ */
+export function generateInitialAvatar(nameOrUser?: string): string {
+  const label = (nameOrUser || 'Q').trim().slice(0, 2).toUpperCase();
+  const colors = [
+    ['#4f46e5', '#3730a3'],
+    ['#7c3aed', '#5b21b6'],
+    ['#0284c7', '#0369a1'],
+    ['#059669', '#047857'],
+    ['#d97706', '#b45309'],
+    ['#dc2626', '#991b1b'],
+  ];
+  let hash = 0;
+  for (let i = 0; i < (nameOrUser || 'Q').length; i++) {
+    hash = (hash << 5) - hash + (nameOrUser || 'Q').charCodeAt(i);
+  }
+  const colorPair = colors[Math.abs(hash) % colors.length];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+    <defs>
+      <linearGradient id="g_${Math.abs(hash)}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="${colorPair[0]}"/>
+        <stop offset="100%" stop-color="${colorPair[1]}"/>
+      </linearGradient>
+    </defs>
+    <rect width="100" height="100" rx="50" fill="url(#g_${Math.abs(hash)})"/>
+    <text x="50" y="58" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="36" font-weight="700" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">${label}</text>
+  </svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 export const DEFAULT_USER_PROFILE: UserProfile = {
   id: 'usr_guest_001',
   username: 'guest',
   name: '访客研究员 (未登录)',
-  avatar: 'https://api.dicebear.com/7.x/open-peeps/svg?seed=GuestQuant&backgroundColor=f8fafc',
+  avatar: generateInitialAvatar('访客'),
   title: 'Quant Explorer · 访客模式',
   department: '访客体验模式',
   email: '未绑定',
@@ -193,31 +224,37 @@ export const UserService = {
 
       const data = (await res.json()) as { success?: boolean; user?: any; token?: string; error?: string };
       if (res.ok && data.success && data.user) {
-        const userProfile: UserProfile = {
-          id: data.user.id || 'usr_custom',
-          username: data.user.username || 'admin',
-          name: data.user.name || data.user.username,
-          avatar: data.user.avatarUrl || data.user.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(data.user.username || 'QuantLead')}&backgroundColor=f8fafc`,
-          title: data.user.role === 'admin' ? 'Senior Quant Lead · 主管合伙人' : data.user.role === 'quant_lead' ? 'CTA & Momentum Strategy Lead' : data.user.role === 'researcher' ? 'Senior Factor & LLM Researcher' : 'Quantitative Trader',
-          department: data.user.department || '量化投研中心',
-          email: data.user.email || `${data.user.username}@aetherquant.io`,
-          phone: '138****9281',
-          role: data.user.role || 'free',
-          status: 'active',
-          accountType: data.user.accountType || 'Quantitative Pro',
-          bio: '专注跨市场多因子选股模型、CTA 趋势动量与基于 LLM 的研报深度知识挖掘。',
-          lastLogin: new Date().toLocaleString(),
-          joinDate: data.user.createdAt || '2024-03-15',
-          apiKeyCount: 4,
-          liveTradingEnabled: true,
-        };
-        this.updateProfile(userProfile);
+        // 1. Store session first so isAuthenticated() is immediately true
         localStorage.setItem(STORAGE_AUTH_SESSION_KEY, JSON.stringify({
           token: data.token,
           user: data.user,
           loginAt: new Date().toISOString(),
           d1Verified: true,
         }));
+
+        // 2. Build UserProfile with cloud avatar
+        const cloudAvatar = data.user.avatarUrl || data.user.avatar_url || data.user.avatar;
+        const userProfile: UserProfile = {
+          id: data.user.id || 'usr_custom',
+          username: data.user.username || 'admin',
+          name: data.user.name || data.user.username,
+          avatar: cloudAvatar || generateInitialAvatar(data.user.name || data.user.username || 'Admin'),
+          title: data.user.role === 'admin' ? 'Senior Quant Lead · 主管合伙人' : data.user.role === 'quant_lead' ? 'CTA & Momentum Strategy Lead' : data.user.role === 'researcher' ? 'Senior Factor & LLM Researcher' : 'Quantitative Trader',
+          department: data.user.department || '量化投研中心',
+          email: data.user.email || `${data.user.username}@aetherquant.io`,
+          phone: '138****9281',
+          role: data.user.role || 'free',
+          status: 'active',
+          accountType: data.user.accountType || data.user.account_type || 'Quantitative Pro',
+          bio: '专注跨市场多因子选股模型、CTA 趋势动量与基于 LLM 的研报深度知识挖掘。',
+          lastLogin: new Date().toLocaleString(),
+          joinDate: data.user.createdAt || data.user.created_at || '2024-03-15',
+          apiKeyCount: 4,
+          liveTradingEnabled: true,
+        };
+
+        // 3. Persist local profile
+        this.updateProfile(userProfile);
         return { success: true, user: userProfile, token: data.token };
       } else {
         return { success: false, error: formatErrorMessage(data.error, 'D1 身份验证失败，请检查账号密码') };
@@ -387,26 +424,27 @@ export const UserService = {
       if (res.ok) {
         const data = (await res.json()) as { success?: boolean; user?: any };
         if (data.success && data.user) {
+          const cloudAvatar = data.user.avatarUrl || data.user.avatar_url || data.user.avatar;
           const userProfile: UserProfile = {
             id: data.user.id,
             username: data.user.username,
             name: data.user.name || data.user.username,
-            avatar: data.user.avatarUrl || data.user.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(data.user.username || 'QuantLead')}&backgroundColor=f8fafc`,
+            avatar: cloudAvatar || generateInitialAvatar(data.user.name || data.user.username || 'QuantLead'),
             title: data.user.role === 'admin' ? 'Senior Quant Lead · 主管合伙人' : data.user.role === 'quant_lead' ? 'CTA & Momentum Strategy Lead' : 'Quantitative Trader',
             department: data.user.department || '量化投研中心',
             email: data.user.email || `${data.user.username}@aetherquant.io`,
             phone: '138****9281',
             role: data.user.role || 'free',
             status: 'active',
-            accountType: data.user.accountType || 'Quantitative Pro',
+            accountType: data.user.accountType || data.user.account_type || 'Quantitative Pro',
             bio: '专注跨市场多因子选股模型与量化投研。',
-            lastLogin: data.user.lastLogin || new Date().toLocaleString(),
-            joinDate: data.user.createdAt || '2024-03-15',
+            lastLogin: data.user.lastLogin || data.user.last_login || new Date().toLocaleString(),
+            joinDate: data.user.createdAt || data.user.created_at || '2024-03-15',
             apiKeyCount: 4,
             liveTradingEnabled: true,
           };
           this.updateProfile(userProfile);
-          session.user = { ...session.user, ...data.user };
+          session.user = { ...session.user, ...data.user, avatarUrl: cloudAvatar };
           localStorage.setItem(STORAGE_AUTH_SESSION_KEY, JSON.stringify(session));
           return userProfile;
         }

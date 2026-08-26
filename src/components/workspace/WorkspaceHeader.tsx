@@ -15,7 +15,7 @@ import {
   LogIn,
 } from 'lucide-react';
 import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
-import { UserService } from '../../services/userService';
+import { UserService, generateInitialAvatar } from '../../services/userService';
 
 export const WorkspaceHeader: React.FC = () => {
   const {
@@ -147,11 +147,11 @@ export const WorkspaceHeader: React.FC = () => {
               </span>
               <div className="w-8 h-8 rounded-full bg-neutral-100 border border-neutral-200 shadow-2xs overflow-hidden flex items-center justify-center">
                 <img
-                  src={currentUser.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`}
+                  src={currentUser.avatar || generateInitialAvatar(currentUser.name || currentUser.username)}
                   alt={currentUser.name}
                   className="w-full h-full object-cover"
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                    (e.currentTarget as HTMLImageElement).src = generateInitialAvatar(currentUser.name || currentUser.username);
                   }}
                 />
               </div>
@@ -172,11 +172,11 @@ export const WorkspaceHeader: React.FC = () => {
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-white border border-neutral-200 p-0.5 overflow-hidden shrink-0 shadow-2xs">
                       <img
-                        src={currentUser.avatar || `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`}
+                        src={currentUser.avatar || generateInitialAvatar(currentUser.name || currentUser.username)}
                         alt={currentUser.name}
                         className="w-full h-full object-cover rounded-lg"
                         onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src = `https://api.dicebear.com/7.x/open-peeps/svg?seed=${encodeURIComponent(currentUser.username || 'QuantLead')}&backgroundColor=f8fafc`;
+                          (e.currentTarget as HTMLImageElement).src = generateInitialAvatar(currentUser.name || currentUser.username);
                         }}
                       />
                     </div>

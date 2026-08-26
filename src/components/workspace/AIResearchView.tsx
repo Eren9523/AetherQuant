@@ -658,7 +658,7 @@ export const AIResearchView: React.FC = () => {
     try {
       await ResearchService.queryAIStream(
         query,
-        selectedStockSymbol,
+        undefined,
         (chunk) => {
           accumulatedText += chunk;
           setMessages((prev) =>
