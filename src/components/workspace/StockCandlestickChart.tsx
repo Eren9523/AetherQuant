@@ -11,6 +11,7 @@ import {
   Time,
 } from 'lightweight-charts';
 import { KLinePoint, MarketColorMode } from '../../types';
+import { useApp } from '../../context/AppContext';
 
 interface StockCandlestickChartProps {
   data: KLinePoint[];
@@ -31,6 +32,7 @@ export const StockCandlestickChart: React.FC<StockCandlestickChartProps> = ({
   onSubChange,
   height = 420,
 }) => {
+  const { dateFormat, timeFormat } = useApp();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   
@@ -79,6 +81,35 @@ export const StockCandlestickChart: React.FC<StockCandlestickChartProps> = ({
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
       height: height,
+      localization: {
+        dateFormat: dateFormat.replace('YYYY', 'yyyy').replace('DD', 'dd'),
+        timeFormatter: (bizDayOrTimestamp: any) => {
+          let date;
+          if (typeof bizDayOrTimestamp === 'string') {
+            date = new Date(bizDayOrTimestamp);
+          } else if (typeof bizDayOrTimestamp === 'number') {
+            date = new Date(bizDayOrTimestamp * 1000);
+          } else {
+            date = new Date(Date.UTC(bizDayOrTimestamp.year, bizDayOrTimestamp.month - 1, bizDayOrTimestamp.day));
+          }
+          const pad = (n) => n.toString().padStart(2, '0');
+          const y = date.getUTCFullYear();
+          const M = pad(date.getUTCMonth() + 1);
+          const d = pad(date.getUTCDate());
+          let h = date.getUTCHours();
+          const m = pad(date.getUTCMinutes());
+          const dateStr = dateFormat.replace('YYYY', y.toString()).replace('MM', M).replace('DD', d);
+          let timeStr = '';
+          if (timeFormat === '12h') {
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            timeStr = `${pad(h)}:${m} ${ampm}`;
+          } else {
+            timeStr = `${pad(h)}:${m}`;
+          }
+          return `${dateStr} ${timeStr}`;
+        }
+      },
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
         textColor: '#737373',
@@ -152,7 +183,7 @@ export const StockCandlestickChart: React.FC<StockCandlestickChartProps> = ({
       chart.remove();
       chartRef.current = null;
     };
-  }, [colorMode, height]);
+  }, [colorMode, height, dateFormat, timeFormat]);
 
   // Update Data & Indicators
   useEffect(() => {
@@ -361,6 +392,40 @@ export const StockCandlestickChart: React.FC<StockCandlestickChartProps> = ({
 
   const activeBar = hoveredBar || (data && data.length > 0 ? data[data.length - 1] : null);
 
+  const formatHoverTime = (timeStr: string) => {
+    if (!timeStr) return '';
+    try {
+      const date = new Date(timeStr);
+      if (isNaN(date.getTime())) return timeStr;
+      
+      const pad = (n) => n.toString().padStart(2, '0');
+      const y = date.getFullYear();
+      const M = pad(date.getMonth() + 1);
+      const d = pad(date.getDate());
+      let h = date.getHours();
+      const m = pad(date.getMinutes());
+      
+      const datePart = dateFormat.replace('YYYY', y.toString()).replace('MM', M).replace('DD', d);
+      
+      let timePart = '';
+      if (timeFormat === '12h') {
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        timePart = `${pad(h)}:${m} ${ampm}`;
+      } else {
+        timePart = `${pad(h)}:${m}`;
+      }
+      
+      // Only append time if it has time components
+      if (timeStr.includes(':') || timeStr.includes('T')) {
+        return `${datePart} ${timePart}`;
+      }
+      return datePart;
+    } catch (e) {
+      return timeStr;
+    }
+  };
+
   return (
     <div className="w-full space-y-3">
       {/* Indicator Selection Bar */}
@@ -406,7 +471,7 @@ export const StockCandlestickChart: React.FC<StockCandlestickChartProps> = ({
         {/* Legend Value Bar */}
         {activeBar && (
           <div className="flex flex-wrap items-center gap-2.5 text-[11px] font-mono text-neutral-600">
-            <span>时间: <strong className="text-neutral-900">{activeBar.time}</strong></span>
+            <span>时间: <strong className="text-neutral-900">{formatHoverTime(activeBar.time)}</strong></span>
             <span>开: <strong className="text-neutral-900">{activeBar.open}</strong></span>
             <span>高: <strong className="text-neutral-900">{activeBar.high}</strong></span>
             <span>低: <strong className="text-neutral-900">{activeBar.low}</strong></span>
