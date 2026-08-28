@@ -25,11 +25,11 @@ export const BacktestViews: React.FC = () => {
 
   const fetchStrategies = async () => {
     try {
-      const res = await ApiClient.get('/strategies');
-      if (res && res.data) {
-        setStrategies(res.data);
-        if (res.data.length > 0 && !selectedStrategy) {
-          setSelectedStrategy(res.data[0].id);
+      const res = await ApiClient.get<any[]>('/strategies');
+      if (res) {
+        setStrategies(res);
+        if (res.length > 0 && !selectedStrategy) {
+          setSelectedStrategy(res[0].id);
         }
       }
     } catch (e) {
@@ -39,9 +39,9 @@ export const BacktestViews: React.FC = () => {
 
   const fetchBacktests = async () => {
     try {
-      const res = await ApiClient.get('/backtests');
-      if (res && res.data) {
-        setBacktests(res.data);
+      const res = await ApiClient.get<any[]>('/backtests');
+      if (res) {
+        setBacktests(res);
       }
     } catch (e) {
       console.error(e);
@@ -59,7 +59,7 @@ export const BacktestViews: React.FC = () => {
     setTradeData([]);
     
     try {
-      const res = await ApiClient.post('/backtests/run', {
+      const res = await ApiClient.post<any>('/backtests/run', {
         strategy_id: strat.id,
         strategy_version: strat.version,
         start_date: '2023-01-01',
@@ -81,16 +81,16 @@ export const BacktestViews: React.FC = () => {
 
   const pollStatus = async (runId: string) => {
     try {
-      const res = await ApiClient.get(`/backtests/${runId}`);
-      if (res && res.data) {
-        if (res.data.status === 'completed') {
+      const res = await ApiClient.get<any>(`/backtests/${runId}`);
+      if (res) {
+        if (res.status === 'completed') {
           setIsRunning(false);
-          setResult(res.data);
-          loadR2Data(res.data.result_r2_key);
+          setResult(res);
+          loadR2Data(res.result_r2_key);
           fetchBacktests(); // refresh list
-        } else if (res.data.status === 'failed') {
+        } else if (res.status === 'failed') {
           setIsRunning(false);
-          alert('Backtest failed: ' + res.data.error_message);
+          alert('Backtest failed: ' + res.error_message);
         } else {
           setTimeout(() => pollStatus(runId), 2000);
         }
@@ -104,11 +104,11 @@ export const BacktestViews: React.FC = () => {
   const loadR2Data = async (r2Key: string) => {
     try {
       // Assuming frontend can fetch from worker datasets endpoint
-      const navRes = await ApiClient.get(`/datasets/internal/r2/${r2Key}/nav.json`);
-      if (navRes) setNavData(navRes);
+      const navRes = await ApiClient.get<any[]>(`/datasets/internal/r2/${r2Key}/nav.json`);
+      if (navRes) setNavData(navRes as React.SetStateAction<any[]>);
       
-      const tradeRes = await ApiClient.get(`/datasets/internal/r2/${r2Key}/trades.json`);
-      if (tradeRes) setTradeData(tradeRes);
+      const tradeRes = await ApiClient.get<any[]>(`/datasets/internal/r2/${r2Key}/trades.json`);
+      if (tradeRes) setTradeData(tradeRes as React.SetStateAction<any[]>);
     } catch (e) {
       console.error("Failed to load R2 data", e);
     }

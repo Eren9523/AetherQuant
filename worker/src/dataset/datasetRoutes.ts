@@ -110,7 +110,7 @@ export function createDatasetRouter() {
            body: JSON.stringify(parseReq)
          });
 
-         const parseRes = await resp.json();
+         const parseRes = await resp.json() as any;
          if (parseRes.success) {
            await c.env.DB.prepare(`
              UPDATE datasets SET 

@@ -24,9 +24,9 @@ export const DataCenterView: React.FC = () => {
   
   const fetchDatasets = async () => {
     try {
-      const res = await ApiClient.get('/datasets');
-      if (res && res.data) {
-        setDatasets(res.data);
+      const res = await ApiClient.get<any[]>('/datasets');
+      if (res) {
+        setDatasets(res);
       }
     } catch (e) {
       console.error(e);
@@ -35,9 +35,9 @@ export const DataCenterView: React.FC = () => {
 
   const fetchHealth = async () => {
     try {
-      const res = await ApiClient.get('/market/health');
-      if (res && res.data) {
-        setHealthData(res.data);
+      const res = await ApiClient.get<any[]>('/market/health');
+      if (res) {
+        setHealthData(res);
       }
     } catch (e) {
       console.error(e);
@@ -60,7 +60,7 @@ export const DataCenterView: React.FC = () => {
     setIsUploading(true);
     try {
       // 1. Init Upload
-      const initRes = await ApiClient.post('/datasets/init-upload', {
+      const initRes = await ApiClient.post<any>('/datasets/init-upload', {
         name: file.name,
         filename: file.name,
         size_bytes: file.size,
@@ -68,9 +68,9 @@ export const DataCenterView: React.FC = () => {
         mime_type: file.type
       });
 
-      if (!initRes || !initRes.data?.id) throw new Error("Init upload failed");
+      if (!initRes || !initRes.id) throw new Error("Init upload failed");
       
-      const dsId = initRes.data.id;
+      const dsId = initRes.id;
 
       // 2. Direct Upload via FormData
       const formData = new FormData();
@@ -110,10 +110,10 @@ export const DataCenterView: React.FC = () => {
     setSelectedDataset(ds);
     setLoading(true);
     try {
-      const res = await ApiClient.get(`/datasets/${ds.id}`);
-      if (res && res.data) {
-        setSelectedDataset(res.data);
-        setPreviewData(res.data.preview || []);
+      const res = await ApiClient.get<any>(`/datasets/${ds.id}`);
+      if (res) {
+        setSelectedDataset(res);
+        setPreviewData(res.preview || []);
       }
     } catch (e) {
       console.error(e);

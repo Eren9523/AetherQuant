@@ -27,11 +27,11 @@ export const FactorViews: React.FC = () => {
   const fetchFactors = async () => {
     setLoading(true);
     try {
-      const res = await ApiClient.get('/factors');
-      if (res && res.data) {
-        setFactors(res.data);
-        if (res.data.length > 0 && !selectedFactor) {
-          setSelectedFactor(res.data[0]);
+      const res = await ApiClient.get<any[]>('/factors');
+      if (res) {
+        setFactors(res);
+        if (res.length > 0 && !selectedFactor) {
+          setSelectedFactor(res[0]);
         }
       }
     } catch (e) {
@@ -64,7 +64,7 @@ export const FactorViews: React.FC = () => {
       if (!fId) {
         if (!formula) formula = customFormula;
         // Create custom factor ad-hoc
-        const createRes = await ApiClient.post('/factors', {
+        const createRes = await ApiClient.post<any>('/factors', {
           name: 'Custom Factor',
           category: 'custom',
           formula: formula,
@@ -72,14 +72,14 @@ export const FactorViews: React.FC = () => {
           source_type: 'custom'
         });
         if (createRes && createRes.data) {
-          fId = createRes.data.id;
+          fId = createRes.id;
         }
       }
       
       if (!fId) throw new Error("Failed to create or find factor");
 
       // Kick off run
-      const runRes = await ApiClient.post(`/factors/${fId}/run`, {
+      const runRes = await ApiClient.post<any>(`/factors/${fId}/run`, {
         universe: 'HS300',
         start_date: '2023-01-01',
         end_date: '2024-01-01',
@@ -90,12 +90,12 @@ export const FactorViews: React.FC = () => {
          setFormulaResult({
            status: 'Calculated successfully',
            summary: runRes.data.summary,
-           runId: runRes.data.run_id
+           runId: runRes.run_id
          });
          
          // If we are looking at the lab, we should refresh the factor run details
          if (factorIdToRun) {
-            await loadFactorLabData(fId, runRes.data.run_id);
+            await loadFactorLabData(fId, runRes.run_id);
          }
          
          fetchFactors(); // Refresh library stats
@@ -116,9 +116,9 @@ export const FactorViews: React.FC = () => {
   const loadFactorLabData = async (factorId: string, runId: string) => {
     setLabLoading(true);
     try {
-      const res = await ApiClient.get(`/factors/${factorId}/runs/${runId}/results`);
-      if (res && res.data) {
-         setLabData(res.data);
+      const res = await ApiClient.get<any>(`/factors/${factorId}/runs/${runId}/results`);
+      if (res) {
+         setLabData(res);
       }
     } catch (e) {
       console.error(e);

@@ -200,6 +200,25 @@ export class ApiClient {
     return (json.data !== undefined ? json.data : json) as T;
   }
 
+  public static async put<T>(path: string, body?: any): Promise<T> {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...this.getAiHeaders(path),
+      },
+      credentials: 'include',
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const json: any = await response.json().catch(() => ({}));
+    if (!response.ok || json.success === false) {
+      throw this.parseErrorResponse(json, response.status, response.statusText);
+    }
+    return (json.data !== undefined ? json.data : json) as T;
+  }
+
   public static async delete<T>(path: string): Promise<T> {
     const response = await fetch(`${API_BASE}${path}`, {
       method: 'DELETE',

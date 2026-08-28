@@ -17,8 +17,8 @@ export const TradingView: React.FC = () => {
     if (!isAuthenticated) return;
     try {
       const res = await PortfolioService.getOrders(5, 0);
-      if (res && res.success) {
-        setOrders(res.data);
+      if (res) {
+        setOrders(res);
       }
     } catch (e) {
       console.error('Failed to fetch orders', e);
@@ -44,12 +44,10 @@ export const TradingView: React.FC = () => {
         quantity,
         limitPrice: orderType === 'LIMIT' ? price : undefined,
       });
-      if (res && res.success) {
-        setTradeMessage(`模拟委托提交成功！状态: ${res.data.status}`);
+      if (res) {
+        setTradeMessage(`模拟委托提交成功！状态: ${res.status}`);
         await refreshPaperAccount();
         fetchOrders();
-      } else {
-        setTradeMessage(`模拟委托失败: ${res?.error || '未知错误'}`);
       }
     } catch (e: any) {
       setTradeMessage(`模拟委托失败: ${e.message || '未知错误'}`);

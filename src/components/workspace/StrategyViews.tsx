@@ -46,9 +46,9 @@ export const StrategyViews: React.FC = () => {
   const fetchStrategies = async () => {
     setLoading(true);
     try {
-      const res = await ApiClient.get('/strategies');
-      if (res && res.data) {
-        setStrategies(res.data);
+      const res = await ApiClient.get<any[]>('/strategies');
+      if (res) {
+        setStrategies(res);
       }
     } catch (e) {
       console.error(e);
@@ -58,9 +58,9 @@ export const StrategyViews: React.FC = () => {
 
   const fetchFactors = async () => {
     try {
-      const res = await ApiClient.get('/factors');
-      if (res && res.data) {
-        setFactors(res.data);
+      const res = await ApiClient.get<any[]>('/factors');
+      if (res) {
+        setFactors(res);
       }
     } catch (e) {
       console.error(e);
@@ -94,7 +94,7 @@ export const StrategyViews: React.FC = () => {
   const handleValidate = async () => {
     setValidationResult(null);
     try {
-      const res = await ApiClient.post('/strategies/validate', currentDsl);
+      const res = await ApiClient.post<any>('/strategies/validate', currentDsl);
       if (res && res.valid) {
         setValidationResult({ valid: true });
       }
@@ -111,23 +111,23 @@ export const StrategyViews: React.FC = () => {
     try {
       if (currentStrategyId) {
         // Update existing (creates new version in DB)
-        const res = await ApiClient.put(`/strategies/${currentStrategyId}`, {
+        const res = await ApiClient.put<any>(`/strategies/${currentStrategyId}`, {
           name,
           description,
           dsl: currentDsl
         });
-        if (res && res.success) {
+        if (res) {
           setSaveStatus(`Saved new version ${res.data.version}!`);
         }
       } else {
         // Create new
-        const res = await ApiClient.post('/strategies', {
+        const res = await ApiClient.post<any>('/strategies', {
           name,
           description,
           market: 'CN',
           dsl: currentDsl
         });
-        if (res && res.success) {
+        if (res) {
           setSaveStatus('Created successfully!');
           setCurrentStrategyId(res.data.id);
         }

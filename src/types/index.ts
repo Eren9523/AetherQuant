@@ -237,3 +237,68 @@ export type WorkspaceView =
   | 'settings'
   | 'user-center'
   | 'admin-console';
+
+// --- API Response DTOs ---
+
+export interface OrderDto {
+  id: string;
+  order_id: string;
+  client_order_id: string;
+  symbol: string;
+  side: string;
+  order_type: string;
+  quantity: number;
+  limit_price: number | null;
+  status: string;
+  created_at: string;
+  note?: string;
+}
+
+export interface PaperTradeDto {
+  id: string;
+  order_id: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  price: number;
+  executed_at: string;
+}
+
+export interface FactorRunDto {
+  success: boolean;
+  result_r2_key: string;
+  summary: any;
+  error?: string;
+}
+
+export interface FactorItemDto {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  ic: string | number;
+  rankIc: string | number;
+  coverage: number;
+  description: string;
+}
+
+export interface DatasetItemDto {
+  id: string;
+  name: string;
+  description: string;
+  r2_key: string;
+  row_count: number;
+  column_count: number;
+  created_at: string;
+}
+
+export interface BacktestRunDto {
+  run_id: string;
+  status: string;
+  progress: number;
+  message?: string;
+  error?: string;
+  nav_r2_key?: string;
+  trades_r2_key?: string;
+  summary?: any;
+}

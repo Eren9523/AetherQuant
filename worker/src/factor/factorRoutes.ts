@@ -121,7 +121,7 @@ export function createFactorRouter() {
         })
       });
 
-      const resJson = await resp.json();
+      const resJson = await resp.json() as any;
 
       if (resJson.success) {
         await c.env.DB.prepare(`

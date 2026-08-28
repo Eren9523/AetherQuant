@@ -8,6 +8,8 @@ import {
   DataSourceStatus,
   MLModelExperiment,
   PaperAccount,
+  OrderDto,
+  PaperTradeDto,
   AutomationTask,
   BacktestResult,
 } from '../types';
@@ -570,26 +572,33 @@ export const PortfolioService = {
     return [];
   },
 
-  async placeOrder(order: { symbol: string; side: 'BUY' | 'SELL'; orderType: 'MARKET' | 'LIMIT'; quantity: number; limitPrice?: number }) {
-    const clientId = `cli_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    return ApiClient.post('/paper/orders', {
-      client_order_id: clientId,
-      symbol: order.symbol,
-      side: order.side,
-      order_type: order.orderType,
-      quantity: order.quantity,
-      limit_price: order.limitPrice,
+  async getOrders(limit = 20, offset = 0): Promise<OrderDto[]> {
+    return ApiClient.get<OrderDto[]>(`/paper/orders?limit=${limit}&offset=${offset}`);
+  },
+
+  async getTrades(limit = 20, offset = 0): Promise<PaperTradeDto[]> {
+    return ApiClient.get<PaperTradeDto[]>(`/paper/trades?limit=${limit}&offset=${offset}`);
+  },
+
+  async placeOrder(params: {
+    symbol: string;
+    side: 'BUY' | 'SELL';
+    orderType: 'LIMIT' | 'MARKET';
+    quantity: number;
+    limitPrice?: number;
+  }): Promise<OrderDto> {
+    if (RUNTIME_CONFIG.isRealMode) {
+      throw new ApiError('SERVICE_NOT_IMPLEMENTED', '模拟交易服务未就绪。');
+    }
+    return ApiClient.post<OrderDto>('/paper/orders', {
+      client_order_id: `co_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      symbol: params.symbol,
+      side: params.side,
+      order_type: params.orderType,
+      quantity: params.quantity,
+      limit_price: params.limitPrice || 0,
     });
   },
-
-  async getOrders(limit = 20, offset = 0) {
-    return ApiClient.get(`/paper/orders?limit=${limit}&offset=${offset}`);
-  },
-
-  async getTrades(limit = 20, offset = 0) {
-    return ApiClient.get(`/paper/trades?limit=${limit}&offset=${offset}`);
-  },
-
   async getAssetAllocation() {
     if (RUNTIME_CONFIG.isRealMode) {
       throw new ApiError('SERVICE_NOT_IMPLEMENTED', '资产配置分布服务未就绪');
