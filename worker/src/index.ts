@@ -214,11 +214,36 @@ app.get('/api/health', (c) => {
 
 import { createMarketRouter } from './market/marketRoutes';
 import { MarketSyncService } from './market/marketSyncService';
+import { createDatasetRouter } from './dataset/datasetRoutes';
+import { createFactorRouter } from './factor/factorRoutes';
+import { createStrategyRouter } from './strategy/strategyRoutes';
+import { createBacktestRouter } from './backtest/backtestRoutes';
+import { createPaperRouter } from './paper/paperRoutes';
 
 // Mount Market Pipeline V2 Routes (Pure D1 / R2 read architecture)
 const marketRouter = createMarketRouter();
 app.route('/api/v1/market', marketRouter);
 app.route('/api/market', marketRouter);
+
+const datasetRouter = createDatasetRouter();
+app.route('/api/v1/datasets', datasetRouter);
+app.route('/api/datasets', datasetRouter);
+
+const factorRouter = createFactorRouter();
+app.route('/api/v1/factors', factorRouter);
+app.route('/api/factors', factorRouter);
+
+const strategyRouter = createStrategyRouter();
+app.route('/api/v1/strategies', strategyRouter);
+app.route('/api/strategies', strategyRouter);
+
+const backtestRouter = createBacktestRouter();
+app.route('/api/v1/backtests', backtestRouter);
+app.route('/api/backtests', backtestRouter);
+
+const paperRouter = createPaperRouter();
+app.route('/api/v1/paper', paperRouter);
+app.route('/api/paper', paperRouter);
 
 // System Status Endpoint (Strict truthfulness - no pseudo-healthy labels)
 app.get('/api/v1/system/status', async (c) => {

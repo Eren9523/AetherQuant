@@ -9,6 +9,9 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.api.market import router as market_router
+from app.api.dataset import router as dataset_router
+from app.api.factor import router as factor_router
+from app.api.backtest import router as backtest_router
 from app.providers.akshare_provider import AKShareProvider
 
 # Setup structured logging
@@ -78,6 +81,9 @@ async def generic_exception_handler(request: Request, exc: Exception):
 
 # Include API Router
 app.include_router(market_router)
+app.include_router(dataset_router)
+app.include_router(factor_router)
+app.include_router(backtest_router, prefix="/api/v1/backtest", tags=["backtest"])
 
 if __name__ == "__main__":
     import uvicorn

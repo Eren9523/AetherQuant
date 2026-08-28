@@ -238,7 +238,7 @@ export const MarketService = {
       }
       try {
         const res = await ApiClient.get<any>(`/market/cn/stocks/${cleanSym}`);
-        const s = res?.quote || res?.data?.quote || res;
+        const s = res?.quote || res?.data?.quote || res?.data || res;
         const basic = res?.basic_info || res?.data?.basic_info || {};
 
         if (s && (s.symbol || s.last !== undefined || s.price !== undefined)) {
@@ -568,6 +568,26 @@ export const PortfolioService = {
       throw new ApiError('SERVICE_NOT_IMPLEMENTED', '风险预警服务未就绪');
     }
     return [];
+  },
+
+  async placeOrder(order: { symbol: string; side: 'BUY' | 'SELL'; orderType: 'MARKET' | 'LIMIT'; quantity: number; limitPrice?: number }) {
+    const clientId = `cli_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    return ApiClient.post('/paper/orders', {
+      client_order_id: clientId,
+      symbol: order.symbol,
+      side: order.side,
+      order_type: order.orderType,
+      quantity: order.quantity,
+      limit_price: order.limitPrice,
+    });
+  },
+
+  async getOrders(limit = 20, offset = 0) {
+    return ApiClient.get(`/paper/orders?limit=${limit}&offset=${offset}`);
+  },
+
+  async getTrades(limit = 20, offset = 0) {
+    return ApiClient.get(`/paper/trades?limit=${limit}&offset=${offset}`);
   },
 
   async getAssetAllocation() {

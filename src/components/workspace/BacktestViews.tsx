@@ -1,258 +1,321 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { BacktestService } from '../../services/quantServices';
-import { mockBacktestResults } from '../../mocks/mockBacktests';
-import { BacktestResult } from '../../types';
-import { Play, GitCompare, CheckCircle2, Loader2, ArrowRight } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-} from 'recharts';
+import { Play, TrendingUp, GitCompare, ArrowRight } from 'lucide-react';
+import { ApiClient } from '../../services/apiClient';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 export const BacktestViews: React.FC = () => {
-  const { workspaceView, setWorkspaceView, selectedBacktestId, setSelectedBacktestId, requireAuth } = useApp();
-  const [activeSubTab, setActiveSubTab] = useState<'center' | 'compare'>(
-    workspaceView === 'strategy-compare' ? 'compare' : 'center'
-  );
+  const { workspaceView } = useApp();
+  const [activeSubTab, setActiveSubTab] = useState<'single' | 'compare'>('single');
+  const [strategies, setStrategies] = useState<any[]>([]);
+  const [backtests, setBacktests] = useState<any[]>([]);
+  const [selectedStrategy, setSelectedStrategy] = useState('');
+  
+  const [isRunning, setIsRunning] = useState(false);
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
+  
+  const [result, setResult] = useState<any>(null);
+  const [navData, setNavData] = useState<any[]>([]);
+  const [tradeData, setTradeData] = useState<any[]>([]);
 
   useEffect(() => {
-    if (workspaceView === 'strategy-compare') setActiveSubTab('compare');
-    else if (workspaceView === 'backtest-center') setActiveSubTab('center');
+    fetchStrategies();
+    fetchBacktests();
   }, [workspaceView]);
 
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [progressPercent, setProgressPercent] = useState(0);
-  const [progressStep, setProgressStep] = useState('');
-  const [currentResult, setCurrentResult] = useState<BacktestResult>(mockBacktestResults[0]);
-
-  // Customizable Backtest Config
-  const [initialCapital, setInitialCapital] = useState(1000000);
-  const [benchmark, setBenchmark] = useState('000300.SH (沪深300)');
-  const [slippage, setSlippage] = useState('0.001 (0.1%)');
-  const [commission, setCommission] = useState('0.0003 (0.03%)');
-
-  const handleStartBacktest = async () => {
-    if (!requireAuth(() => handleStartBacktest())) {
-      return;
+  const fetchStrategies = async () => {
+    try {
+      const res = await ApiClient.get('/strategies');
+      if (res && res.data) {
+        setStrategies(res.data);
+        if (res.data.length > 0 && !selectedStrategy) {
+          setSelectedStrategy(res.data[0].id);
+        }
+      }
+    } catch (e) {
+      console.error(e);
     }
+  };
 
-    setIsSimulating(true);
-    setProgressPercent(0);
-    setProgressStep('初始化回测引擎...');
+  const fetchBacktests = async () => {
+    try {
+      const res = await ApiClient.get('/backtests');
+      if (res && res.data) {
+        setBacktests(res.data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
-    const res = await BacktestService.runBacktest({
-      strategyName: '沪深300-60日趋势动量策略',
-      universe: '沪深300',
-      startDate: '2021-01-01',
-      endDate: '2026-01-01',
-      initialCapital: 1000000,
-      onProgress: (pct, step) => {
-        setProgressPercent(pct);
-        setProgressStep(step);
-      },
-    });
+  const handleRun = async () => {
+    if (!selectedStrategy) return;
+    const strat = strategies.find(s => s.id === selectedStrategy);
+    if (!strat) return;
 
-    setCurrentResult(res);
-    setIsSimulating(false);
+    setIsRunning(true);
+    setResult(null);
+    setNavData([]);
+    setTradeData([]);
+    
+    try {
+      const res = await ApiClient.post('/backtests/run', {
+        strategy_id: strat.id,
+        strategy_version: strat.version,
+        start_date: '2023-01-01',
+        end_date: '2024-01-01',
+        initial_capital: 1000000,
+        commission_rate: 0.0003,
+        slippage_bps: 1.0
+      });
+      
+      if (res && res.run_id) {
+        setCurrentRunId(res.run_id);
+        pollStatus(res.run_id);
+      }
+    } catch (e) {
+      console.error(e);
+      setIsRunning(false);
+    }
+  };
+
+  const pollStatus = async (runId: string) => {
+    try {
+      const res = await ApiClient.get(`/backtests/${runId}`);
+      if (res && res.data) {
+        if (res.data.status === 'completed') {
+          setIsRunning(false);
+          setResult(res.data);
+          loadR2Data(res.data.result_r2_key);
+          fetchBacktests(); // refresh list
+        } else if (res.data.status === 'failed') {
+          setIsRunning(false);
+          alert('Backtest failed: ' + res.data.error_message);
+        } else {
+          setTimeout(() => pollStatus(runId), 2000);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      setTimeout(() => pollStatus(runId), 2000);
+    }
+  };
+
+  const loadR2Data = async (r2Key: string) => {
+    try {
+      // Assuming frontend can fetch from worker datasets endpoint
+      const navRes = await ApiClient.get(`/datasets/internal/r2/${r2Key}/nav.json`);
+      if (navRes) setNavData(navRes);
+      
+      const tradeRes = await ApiClient.get(`/datasets/internal/r2/${r2Key}/trades.json`);
+      if (tradeRes) setTradeData(tradeRes);
+    } catch (e) {
+      console.error("Failed to load R2 data", e);
+    }
+  };
+
+  const handleViewHistorical = (bt: any) => {
+    setResult(bt);
+    if (bt.result_r2_key) {
+      loadR2Data(bt.result_r2_key);
+    }
+    setActiveSubTab('single');
   };
 
   return (
     <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
-      {/* Subtabs Menu */}
-      <div className="flex items-center gap-2 border-b border-neutral-200/80 pb-3">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Backtest Center</h1>
+        <p className="text-sm text-neutral-500 mt-1">
+          Historical backtesting and performance attribution powered by Python Engine.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 border-b border-neutral-100 pb-2">
         <button
-          onClick={() => {
-            setActiveSubTab('center');
-            setWorkspaceView('backtest-center');
-          }}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-            activeSubTab === 'center' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'
+          onClick={() => setActiveSubTab('single')}
+          className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
+            activeSubTab === 'single' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'
           }`}
         >
-          全天候回测中心 (Backtest Engine)
+          <TrendingUp className="w-4 h-4" /> 回测运行与分析
         </button>
         <button
-          onClick={() => {
-            setActiveSubTab('compare');
-            setWorkspaceView('strategy-compare');
-          }}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+          onClick={() => setActiveSubTab('compare')}
+          className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 ${
             activeSubTab === 'compare' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'
           }`}
         >
-          策略对比矩阵 (Strategy Comparison)
+          <GitCompare className="w-4 h-4" /> 多策略对比矩阵
         </button>
       </div>
 
-      {activeSubTab === 'center' && (
+      {activeSubTab === 'single' && (
         <div className="space-y-6">
-          {/* Backtest Control Header */}
-          <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-neutral-900">{currentResult.strategyName}</h2>
-              <p className="text-xs text-neutral-400 font-mono">
-                股票池: {currentResult.universe} · 时间跨度: {currentResult.startDate} → {currentResult.endDate}
-              </p>
+          <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex-1 w-full space-y-3">
+              <label className="text-xs font-bold text-neutral-800">选择策略定义 (Strategy Definition)</label>
+              <select 
+                value={selectedStrategy}
+                onChange={(e) => setSelectedStrategy(e.target.value)}
+                className="w-full p-2.5 bg-neutral-50 rounded-xl border border-neutral-200 font-medium text-xs focus:outline-none"
+              >
+                {strategies.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} (v{s.version})</option>
+                ))}
+              </select>
             </div>
-
+            
             <button
-              onClick={handleStartBacktest}
-              disabled={isSimulating}
-              className="px-6 py-3 bg-neutral-900 hover:bg-black text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 disabled:opacity-50"
+              onClick={handleRun}
+              disabled={isRunning || strategies.length === 0}
+              className="w-full md:w-auto px-8 py-3 bg-neutral-900 text-white font-bold text-xs rounded-xl hover:bg-black transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-4 md:mt-0"
             >
-              {isSimulating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
-                  <span>计算中 ({progressPercent}%)</span>
-                </>
+              {isRunning ? (
+                <>正在运行回测...</>
               ) : (
-                <>
-                  <Play className="w-4 h-4 text-emerald-400" />
-                  <span>开始全量回测仿真</span>
-                </>
+                <><Play className="w-4 h-4 text-emerald-400" /> 开始全量回测仿真</>
               )}
             </button>
           </div>
 
-          {/* Progress Modal Overlay when Simulating */}
-          {isSimulating && (
-            <div className="p-6 bg-neutral-900 text-white rounded-2xl border border-neutral-800 space-y-3 font-mono text-xs">
-              <div className="flex items-center justify-between">
-                <span>[BACKTEST SIMULATOR RUNNING]</span>
-                <span className="text-emerald-400 font-bold">{progressPercent}%</span>
+          {result && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
+                  <div className="text-xs text-neutral-400">累计收益 (Total)</div>
+                  <div className="text-2xl font-bold font-mono text-emerald-600">+{(result.total_return * 100).toFixed(2)}%</div>
+                  <div className="text-[10px] text-neutral-400">年化收益 {(result.annualized_return * 100).toFixed(2)}%</div>
+                </div>
+                <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
+                  <div className="text-xs text-neutral-400">夏普比率 (Sharpe)</div>
+                  <div className="text-2xl font-bold font-mono text-neutral-900">{(result.sharpe_ratio).toFixed(2)}</div>
+                </div>
+                <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
+                  <div className="text-xs text-neutral-400">最大回撤 (Drawdown)</div>
+                  <div className="text-2xl font-bold font-mono text-rose-600">{(result.max_drawdown * 100).toFixed(2)}%</div>
+                  <div className="text-[10px] text-neutral-400">Calmar 比率 {(result.calmar_ratio).toFixed(2)}</div>
+                </div>
+                <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
+                  <div className="text-xs text-neutral-400">胜率 / 换手</div>
+                  <div className="text-2xl font-bold font-mono text-neutral-900">{(result.win_rate * 100).toFixed(1)}%</div>
+                  <div className="text-[10px] text-neutral-400">年换手率 {(result.turnover_rate).toFixed(2)}</div>
+                </div>
               </div>
-              <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 transition-all duration-300"
-                  style={{ width: `${progressPercent}%` }}
-                />
+
+              <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
+                <div className="flex items-center justify-between text-xs font-bold text-neutral-800">
+                  <span>策略收益曲线 vs Benchmark</span>
+                  <span className="font-mono text-neutral-400">{result.start_date} - {result.end_date}</span>
+                </div>
+                <div className="h-64 w-full">
+                  {navData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={navData}>
+                      <defs>
+                        <linearGradient id="navGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#171717" stopOpacity={0.2} />
+                          <stop offset="95%" stopColor="#171717" stopOpacity={0.0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="date" stroke="#a3a3a3" fontSize={10} tickLine={false} />
+                      <YAxis stroke="#a3a3a3" fontSize={10} tickLine={false} domain={['auto', 'auto']} />
+                      <Tooltip contentStyle={{ backgroundColor: '#171717', borderRadius: '10px', color: '#fff', fontSize: '11px' }} />
+                      <Area type="monotone" dataKey="nav" stroke="#171717" strokeWidth={2} fill="url(#navGrad)" />
+                      <Area type="monotone" dataKey="benchmark" stroke="#d4d4d4" strokeWidth={1.5} fill="none" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  ) : <div className="flex items-center justify-center h-full text-xs text-neutral-400">Loading chart data...</div>}
+                </div>
               </div>
-              <div className="text-neutral-400">{progressStep}</div>
-            </div>
+
+              <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
+                <h3 className="text-sm font-bold text-neutral-900">历史逐笔模拟撮合记录 (Trades Execution)</h3>
+                <div className="overflow-x-auto h-64 overflow-y-auto">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead>
+                      <tr className="text-neutral-400 border-b border-neutral-100 uppercase">
+                        <th className="py-2 px-3 sticky top-0 bg-white">日期</th>
+                        <th className="py-2 px-3 sticky top-0 bg-white">标的代码</th>
+                        <th className="py-2 px-3 sticky top-0 bg-white">方向</th>
+                        <th className="py-2 px-3 sticky top-0 bg-white">成交价格</th>
+                        <th className="py-2 px-3 sticky top-0 bg-white">成交数量</th>
+                        <th className="py-2 px-3 sticky top-0 bg-white">手续费</th>
+                        <th className="py-2 px-3 sticky top-0 bg-white">滑点成本</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-neutral-100">
+                      {tradeData.map((tr, idx) => (
+                        <tr key={idx} className="hover:bg-neutral-50">
+                          <td className="py-2.5 px-3 text-neutral-500">{tr.date}</td>
+                          <td className="py-2.5 px-3 font-bold text-neutral-900">{tr.symbol}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${tr.action === 'BUY' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                              {tr.action === 'BUY' ? '买入' : '卖出'}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-bold">¥{tr.price.toFixed(2)}</td>
+                          <td className="py-2.5 px-3">{tr.amount}</td>
+                          <td className="py-2.5 px-3">¥{tr.commission.toFixed(2)}</td>
+                          <td className="py-2.5 px-3">¥{tr.slippage_cost.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
           )}
-
-          {/* Key Metric Stat Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
-              <div className="text-xs text-neutral-400">累计收益 (Total)</div>
-              <div className="text-2xl font-bold font-mono text-emerald-600">+{currentResult.totalReturn}%</div>
-              <div className="text-[10px] text-neutral-400">年化收益 {currentResult.annualizedReturn}%</div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
-              <div className="text-xs text-neutral-400">夏普比率 (Sharpe)</div>
-              <div className="text-2xl font-bold font-mono text-neutral-900">{currentResult.sharpeRatio}</div>
-              <div className="text-[10px] text-emerald-600 font-bold">Alpha +14.5%</div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
-              <div className="text-xs text-neutral-400">最大回撤 (Drawdown)</div>
-              <div className="text-2xl font-bold font-mono text-rose-600">{currentResult.maxDrawdown}%</div>
-              <div className="text-[10px] text-neutral-400">Calmar 比率 {currentResult.calmarRatio}</div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border border-neutral-200/80 shadow-sm">
-              <div className="text-xs text-neutral-400">胜率 / 换手</div>
-              <div className="text-2xl font-bold font-mono text-neutral-900">{currentResult.winRate}%</div>
-              <div className="text-[10px] text-neutral-400">月换手率 {currentResult.turnoverRate}%</div>
-            </div>
-          </div>
-
-          {/* NAV Curve Chart */}
-          <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
-            <div className="flex items-center justify-between text-xs font-bold text-neutral-800">
-              <span>策略收益曲线 vs 基准沪深300</span>
-              <span className="font-mono text-neutral-400">2021.01 - 2026.01</span>
-            </div>
-
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={currentResult.navHistory}>
-                  <defs>
-                    <linearGradient id="navGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#171717" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#171717" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis dataKey="date" stroke="#a3a3a3" fontSize={10} tickLine={false} />
-                  <YAxis stroke="#a3a3a3" fontSize={10} tickLine={false} domain={['auto', 'auto']} />
-                  <Tooltip contentStyle={{ backgroundColor: '#171717', borderRadius: '10px', color: '#fff', fontSize: '11px' }} />
-                  <Area type="monotone" dataKey="strategy" stroke="#171717" strokeWidth={2} fill="url(#navGrad)" />
-                  <Area type="monotone" dataKey="benchmark" stroke="#d4d4d4" strokeWidth={1.5} fill="none" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Trades Execution Logs Table */}
-          <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-neutral-900">历史逐笔模拟撮合记录 (Trades Execution)</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-mono">
-                <thead>
-                  <tr className="text-neutral-400 border-b border-neutral-100 uppercase">
-                    <th className="py-2 px-3">日期</th>
-                    <th className="py-2 px-3">标的代码 / 名称</th>
-                    <th className="py-2 px-3">方向</th>
-                    <th className="py-2 px-3">成交价格</th>
-                    <th className="py-2 px-3">成交数量</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {currentResult.trades.map((tr, idx) => (
-                    <tr key={idx} className="hover:bg-neutral-50">
-                      <td className="py-2.5 px-3 text-neutral-500">{tr.date}</td>
-                      <td className="py-2.5 px-3 font-bold text-neutral-900">{tr.name} ({tr.symbol})</td>
-                      <td className="py-2.5 px-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${tr.action === 'BUY' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                          {tr.action === 'BUY' ? '买入' : '卖出'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 font-bold">¥{tr.price}</td>
-                      <td className="py-2.5 px-3">{tr.amount} 股</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
       )}
 
-      {/* Subtab 2: Strategy Compare Matrix */}
       {activeSubTab === 'compare' && (
         <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
           <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
             <GitCompare className="w-4 h-4 text-neutral-600" />
-            多策略夏普与回撤对比矩阵
+            真实历史回测对比矩阵
           </h3>
-
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs font-sans">
               <thead>
                 <tr className="text-neutral-400 border-b border-neutral-100 uppercase font-mono">
-                  <th className="py-3 px-3">策略名称</th>
-                  <th className="py-3 px-3">股票池</th>
+                  <th className="py-3 px-3">策略 ID (Version)</th>
+                  <th className="py-3 px-3">运行时间</th>
+                  <th className="py-3 px-3">状态</th>
                   <th className="py-3 px-3">累计收益</th>
                   <th className="py-3 px-3">夏普比率</th>
                   <th className="py-3 px-3">最大回撤</th>
-                  <th className="py-3 px-3">胜率</th>
+                  <th className="py-3 px-3">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100 font-mono">
-                {mockBacktestResults.map((bt) => (
+                {backtests.map((bt) => (
                   <tr key={bt.id} className="hover:bg-neutral-50">
-                    <td className="py-3 px-3 font-bold text-neutral-900 font-sans">{bt.strategyName}</td>
-                    <td className="py-3 px-3 text-neutral-500 font-sans">{bt.universe}</td>
-                    <td className="py-3 px-3 font-bold text-emerald-600">+{bt.totalReturn}%</td>
-                    <td className="py-3 px-3 font-bold text-neutral-900">{bt.sharpeRatio}</td>
-                    <td className="py-3 px-3 font-bold text-rose-600">{bt.maxDrawdown}%</td>
-                    <td className="py-3 px-3 text-neutral-700">{bt.winRate}%</td>
+                    <td className="py-3 px-3 font-bold text-neutral-900 font-sans">{bt.strategy_id.substring(0,8)} (v{bt.strategy_version})</td>
+                    <td className="py-3 px-3 text-neutral-500 font-sans">{new Date(bt.created_at).toLocaleString()}</td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${bt.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : bt.status === 'failed' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'}`}>
+                        {bt.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 font-bold text-emerald-600">{bt.status === 'completed' ? `+${(bt.total_return * 100).toFixed(2)}%` : '--'}</td>
+                    <td className="py-3 px-3 font-bold text-neutral-900">{bt.status === 'completed' ? bt.sharpe_ratio.toFixed(2) : '--'}</td>
+                    <td className="py-3 px-3 font-bold text-rose-600">{bt.status === 'completed' ? `${(bt.max_drawdown * 100).toFixed(2)}%` : '--'}</td>
+                    <td className="py-3 px-3">
+                      {bt.status === 'completed' && (
+                        <button 
+                          onClick={() => handleViewHistorical(bt)}
+                          className="px-2.5 py-1 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-[11px] font-semibold rounded-lg transition-colors"
+                        >
+                          查看详情 <ArrowRight className="w-3 h-3 inline" />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {backtests.length === 0 && <div className="text-center py-6 text-xs text-neutral-400">暂无回测记录</div>}
           </div>
         </div>
       )}

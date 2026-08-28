@@ -30,32 +30,36 @@ export const DashboardView: React.FC = () => {
       </div>
 
       {/* Account Overview Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="组合总资产"
-          value={`¥${paperAccount.totalAssets.toLocaleString()}`}
-          subtitle={`现金 ¥${paperAccount.cash.toLocaleString()}`}
-          badge={<TrendBadge value={paperAccount.cumPnLPercent} />}
-        />
-        <StatCard
-          title="今日盈亏"
-          value={`+¥${paperAccount.dailyPnL.toLocaleString()}`}
-          subtitle="超越沪深300指数 +0.57%"
-          badge={<TrendBadge value={paperAccount.dailyPnLPercent} />}
-        />
-        <StatCard
-          title="策略夏普比率 (Sharpe)"
-          value="1.37"
-          subtitle="胜率 64.5% · 年化 19.8%"
-          badge={<span className="text-xs font-mono text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded">优秀</span>}
-        />
-        <StatCard
-          title="最大回撤 (Max Drawdown)"
-          value="-8.4%"
-          subtitle="硬性风控门槛 -15.0%"
-          badge={<span className="text-xs font-mono text-rose-600 font-bold bg-rose-50 px-2 py-0.5 rounded">安全</span>}
-        />
-      </div>
+      {paperAccount ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            title="组合总资产"
+            value={`¥${paperAccount.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            subtitle={`现金 ¥${paperAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            badge={<TrendBadge value={paperAccount.cumPnLPercent} />}
+          />
+          <StatCard
+            title="今日盈亏"
+            value={`${paperAccount.dailyPnL >= 0 ? '+' : ''}¥${paperAccount.dailyPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            subtitle="实时模拟盈亏"
+            badge={<TrendBadge value={paperAccount.dailyPnLPercent} />}
+          />
+          <StatCard
+            title="策略夏普比率 (Sharpe)"
+            value="--"
+            subtitle="无实盘历史"
+            badge={<span className="text-xs font-mono text-neutral-600 font-bold bg-neutral-100 px-2 py-0.5 rounded">--</span>}
+          />
+          <StatCard
+            title="最大回撤 (Max Drawdown)"
+            value="--"
+            subtitle="硬性风控门槛 -15.0%"
+            badge={<span className="text-xs font-mono text-neutral-600 font-bold bg-neutral-100 px-2 py-0.5 rounded">安全</span>}
+          />
+        </div>
+      ) : (
+        <div className="text-sm text-neutral-500 py-4">正在加载账户信息...</div>
+      )}
 
       {/* Main Grid: AI Briefing + Active Strategies */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

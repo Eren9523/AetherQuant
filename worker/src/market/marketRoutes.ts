@@ -378,10 +378,10 @@ export function createMarketRouter() {
           i.industry
         FROM market_quotes_snapshot q
         LEFT JOIN instruments i ON q.symbol = i.symbol
-        WHERE q.snapshot_id = ? AND q.symbol = ?
+        WHERE q.snapshot_id = ? AND (q.symbol = ? OR q.symbol LIKE ?)
       `;
 
-      const row = await c.env.DB.prepare(quoteSql).bind(activeId, symbol).first<any>();
+      const row = await c.env.DB.prepare(quoteSql).bind(activeId, symbol, `${symbol}.%`).first<any>();
 
       if (row) {
         const stale = isSnapshotStale(row.as_of);

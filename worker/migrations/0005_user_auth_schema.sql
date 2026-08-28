@@ -1,14 +1,7 @@
 -- Migration 0005: User and Session Schema Alignment
 -- Adds missing auth and profile columns to users and sessions tables
 
-ALTER TABLE users ADD COLUMN username TEXT;
-ALTER TABLE users ADD COLUMN department TEXT;
-ALTER TABLE users ADD COLUMN account_type TEXT DEFAULT 'Standard';
-ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'active';
-ALTER TABLE users ADD COLUMN last_login TEXT;
 
-ALTER TABLE sessions ADD COLUMN username TEXT;
-ALTER TABLE sessions ADD COLUMN token TEXT;
 
 CREATE TABLE IF NOT EXISTS user_credentials (
   id TEXT PRIMARY KEY,

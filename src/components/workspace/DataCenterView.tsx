@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { mockDataSources, mockDataQualityStats } from '../../mocks/mockDataSources';
-import { DataService } from '../../services/quantServices';
-import { Database, UploadCloud, FileText, CheckCircle2, RefreshCw, HardDrive, AlertCircle } from 'lucide-react';
+import { ApiClient } from '../../services/apiClient';
+import { Database, UploadCloud, FileText, HardDrive, AlertCircle, Trash2, CheckCircle2 } from 'lucide-react';
 
 export const DataCenterView: React.FC = () => {
   const { workspaceView, setWorkspaceView, requireAuth } = useApp();
@@ -10,37 +9,120 @@ export const DataCenterView: React.FC = () => {
     workspaceView === 'upload-center' ? 'upload' : workspaceView === 'data-browser' ? 'browser' : 'sources'
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (workspaceView === 'upload-center') setActiveSubTab('upload');
     else if (workspaceView === 'data-browser') setActiveSubTab('browser');
     else if (workspaceView === 'data-center') setActiveSubTab('sources');
   }, [workspaceView]);
 
+  const [datasets, setDatasets] = useState<any[]>([]);
+  const [selectedDataset, setSelectedDataset] = useState<any>(null);
+  const [previewData, setPreviewData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  
+  const [healthData, setHealthData] = useState<any>(null);
+  
+  const fetchDatasets = async () => {
+    try {
+      const res = await ApiClient.get('/datasets');
+      if (res && res.data) {
+        setDatasets(res.data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchHealth = async () => {
+    try {
+      const res = await ApiClient.get('/market/health');
+      if (res && res.data) {
+        setHealthData(res.data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchDatasets();
+    fetchHealth();
+  }, []);
+
   const [dragActive, setDragActive] = useState(false);
-  const [isParsing, setIsParsing] = useState(false);
-  const [datasetInfo, setDatasetInfo] = useState<any>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = async (file: File) => {
+    if (!requireAuth(() => handleFileUpload(file))) {
+      return;
+    }
+    setIsUploading(true);
+    try {
+      // 1. Init Upload
+      const initRes = await ApiClient.post('/datasets/init-upload', {
+        name: file.name,
+        filename: file.name,
+        size_bytes: file.size,
+        format: file.name.split('.').pop(),
+        mime_type: file.type
+      });
+
+      if (!initRes || !initRes.data?.id) throw new Error("Init upload failed");
+      
+      const dsId = initRes.data.id;
+
+      // 2. Direct Upload via FormData
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      await fetch(`/api/v1/datasets/${dsId}/upload`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      await fetchDatasets();
+      setActiveSubTab('browser');
+    } catch (e) {
+      console.error("Upload failed", e);
+      alert("Upload failed. File might be too large or server error.");
+    }
+    setIsUploading(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await ApiClient.delete(`/datasets/${id}`);
+      await fetchDatasets();
+      if (selectedDataset?.id === id) {
+        setSelectedDataset(null);
+        setPreviewData([]);
+      }
+    } catch (e) {
+      console.error("Delete failed", e);
+    }
+  };
+
+  const loadDatasetPreview = async (ds: any) => {
+    setSelectedDataset(ds);
+    setLoading(true);
+    try {
+      const res = await ApiClient.get(`/datasets/${ds.id}`);
+      if (res && res.data) {
+        setSelectedDataset(res.data);
+        setPreviewData(res.data.preview || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
 
   // Data Browser search & filter state
   const [dataSearchTerm, setDataSearchTerm] = useState('');
-  const [dataGridRows, setDataGridRows] = useState([
-    { symbol: '600519.SH', name: '贵州茅台', date: '2026-08-14', open: '1462.00', high: '1490.00', low: '1460.00', close: '1482.35', volume: '42,800', pe: '24.2', status: 'Verified' },
-    { symbol: '300750.SZ', name: '宁德时代', date: '2026-08-14', open: '242.00', high: '251.00', low: '241.20', close: '248.60', volume: '285,000', pe: '21.5', status: 'Verified' },
-    { symbol: '601318.SH', name: '中国平安', date: '2026-08-14', open: '48.50', high: '49.80', low: '48.20', close: '49.45', volume: '620,000', pe: '8.4', status: 'Verified' },
-    { symbol: '002594.SZ', name: '比亚迪', date: '2026-08-14', open: '282.00', high: '289.50', low: '280.00', close: '287.10', volume: '194,000', pe: '18.9', status: 'Verified' },
-    { symbol: '600036.SH', name: '招商银行', date: '2026-08-14', open: '38.20', high: '39.10', low: '38.00', close: '38.85', volume: '810,000', pe: '6.2', status: 'Verified' },
-    { symbol: 'NVDA.O', name: 'NVIDIA Corp', date: '2026-08-14', open: '138.50', high: '142.20', low: '137.80', close: '141.60', volume: '32,400,000', pe: '38.5', status: 'Verified' },
-    { symbol: 'AAPL.O', name: 'Apple Inc', date: '2026-08-14', open: '228.00', high: '231.50', low: '227.20', close: '230.80', volume: '18,500,000', pe: '29.1', status: 'Verified' },
-  ]);
-
-  const handleFileUpload = async (fileName: string) => {
-    if (!requireAuth(() => handleFileUpload(fileName))) {
-      return;
-    }
-    setIsParsing(true);
-    const parsed = await DataService.parseUploadedFile(fileName);
-    setDatasetInfo(parsed);
-    setIsParsing(false);
-  };
 
   return (
     <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
@@ -60,7 +142,7 @@ export const DataCenterView: React.FC = () => {
             activeSubTab === 'upload' ? 'bg-neutral-900 text-white shadow-sm' : 'text-neutral-600 hover:bg-neutral-100'
           }`}
         >
-          上传中心 (BYOD Schema Mapping)
+          上传中心 (BYOD)
         </button>
         <button
           onClick={() => setActiveSubTab('browser')}
@@ -78,32 +160,34 @@ export const DataCenterView: React.FC = () => {
           {/* Overall Quality Banner */}
           <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm grid grid-cols-1 sm:grid-cols-4 gap-6">
             <div>
-              <div className="text-xs font-semibold text-neutral-400 mb-1">数据质量综合得分</div>
-              <div className="text-3xl font-extrabold font-mono text-emerald-600">
-                {mockDataQualityStats.overallScore} / 100
+              <div className="text-xs font-semibold text-neutral-400 mb-1">数据库同步状态</div>
+              <div className="text-2xl font-extrabold font-mono text-emerald-600">
+                {healthData?.status === 'healthy' ? 'Healthy' : healthData?.status || 'Unknown'}
               </div>
-              <span className="text-[10px] text-neutral-400 font-mono">上次全量审计: {mockDataQualityStats.lastAudit}</span>
+              <span className="text-[10px] text-neutral-400 font-mono">
+                {healthData?.last_sync_at ? new Date(healthData.last_sync_at).toLocaleString() : '未同步'}
+              </span>
             </div>
             <div>
-              <div className="text-xs font-semibold text-neutral-400 mb-1">行情记录完整率</div>
+              <div className="text-xs font-semibold text-neutral-400 mb-1">标的总量 (Stocks)</div>
               <div className="text-2xl font-bold font-mono text-neutral-900">
-                {mockDataQualityStats.completeness}%
+                {healthData?.stock_count || 0}
               </div>
-              <span className="text-[10px] text-emerald-600 font-semibold">健康状态</span>
+              <span className="text-[10px] text-emerald-600 font-semibold">数据库实时读取</span>
             </div>
             <div>
-              <div className="text-xs font-semibold text-neutral-400 mb-1">缺失记录数</div>
-              <div className="text-2xl font-bold font-mono text-neutral-900">
-                {mockDataQualityStats.missingRecords} 条
+              <div className="text-xs font-semibold text-neutral-400 mb-1">数据源 (Provider)</div>
+              <div className="text-2xl font-bold font-mono text-neutral-900 capitalize">
+                {healthData?.provider || 'none'}
               </div>
-              <span className="text-[10px] text-neutral-400">自动对齐修复中</span>
+              <span className="text-[10px] text-neutral-400">底层服务: {healthData?.source || 'akshare'}</span>
             </div>
             <div>
-              <div className="text-xs font-semibold text-neutral-400 mb-1">异常极值修正</div>
+              <div className="text-xs font-semibold text-neutral-400 mb-1">BYOD 存储占用 (R2)</div>
               <div className="text-2xl font-bold font-mono text-neutral-900">
-                {mockDataQualityStats.anomalyRecords} 条
+                {(datasets.reduce((acc, ds) => acc + (ds.size_bytes || 0), 0) / (1024 * 1024)).toFixed(2)} MB
               </div>
-              <span className="text-[10px] text-neutral-400">已执行 MAD 去极值</span>
+              <span className="text-[10px] text-neutral-400">已接入 {datasets.length} 个数据集</span>
             </div>
           </div>
 
@@ -115,33 +199,30 @@ export const DataCenterView: React.FC = () => {
             </h3>
 
             <div className="space-y-3">
-              {mockDataSources.map((ds) => (
-                <div
-                  key={ds.id}
-                  className="p-4 bg-neutral-50 rounded-xl border border-neutral-200/60 flex items-center justify-between"
-                >
-                  <div className="space-y-1">
-                    <div className="font-bold text-neutral-900 flex items-center gap-2 text-sm">
-                      {ds.name}
-                      <span
-                        className={`px-2 py-0.2 rounded text-[10px] font-mono font-semibold border ${
-                          ds.status === 'online'
-                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                            : 'bg-neutral-200 text-neutral-600 border-neutral-300'
-                        }`}
-                      >
-                        {ds.status === 'online' ? '● 在线' : '○ 未连接'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-neutral-500 font-mono">{ds.itemCount}</div>
+              <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200/60 flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="font-bold text-neutral-900 flex items-center gap-2 text-sm">
+                    {healthData?.provider === 'eastmoney' ? '东方财富 (EastMoney)' : '核心行情数据'}
+                    <span
+                      className={`px-2 py-0.2 rounded text-[10px] font-mono font-semibold border ${
+                        healthData?.status === 'healthy'
+                          ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                          : 'bg-neutral-200 text-neutral-600 border-neutral-300'
+                      }`}
+                    >
+                      {healthData?.status === 'healthy' ? '● 在线' : '○ 未连接/过时'}
+                    </span>
                   </div>
+                  <div className="text-xs text-neutral-500 font-mono">包含 {healthData?.stock_count || 0} 只标的</div>
+                </div>
 
-                  <div className="text-right">
-                    <div className="text-xs text-neutral-400 font-mono">上次同步</div>
-                    <div className="text-xs font-bold text-neutral-800 font-mono">{ds.lastSync}</div>
+                <div className="text-right">
+                  <div className="text-xs text-neutral-400 font-mono">上次同步 (Active Snapshot)</div>
+                  <div className="text-xs font-bold text-neutral-800 font-mono">
+                    {healthData?.active_snapshot_as_of ? new Date(healthData.active_snapshot_as_of).toLocaleString() : 'N/A'}
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         </div>
@@ -153,63 +234,69 @@ export const DataCenterView: React.FC = () => {
           <div className="max-w-xl mx-auto text-center space-y-2">
             <h3 className="text-lg font-bold text-neutral-900">带入你自己的数据 (BYOD)</h3>
             <p className="text-xs text-neutral-500">
-              支持拖入自定义 CSV / XLSX 因子矩阵，系统将智能识别字段并创建 Schema 映射。
+              支持上传自定义 CSV / XLSX / JSON 数据集，由 Python 服务进行解析并生成 Schema 映射，原文件安全存储于 Cloudflare R2。
             </p>
           </div>
 
           <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragActive(true);
-            }}
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
             onDragLeave={() => setDragActive(false)}
             onDrop={(e) => {
               e.preventDefault();
               setDragActive(false);
-              handleFileUpload('my_alpha_factor_2026.csv');
+              if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                handleFileUpload(e.dataTransfer.files[0]);
+              }
             }}
-            onClick={() => handleFileUpload('my_alpha_factor_2026.csv')}
+            onClick={() => fileInputRef.current?.click()}
             className={`p-10 rounded-2xl border-2 border-dashed text-center cursor-pointer transition-all ${
-              dragActive || datasetInfo
+              dragActive
                 ? 'border-indigo-500 bg-indigo-50/20'
                 : 'border-neutral-300 bg-neutral-50 hover:bg-neutral-100/60'
             }`}
           >
+            <input 
+              type="file" 
+              className="hidden" 
+              ref={fileInputRef} 
+              accept=".csv,.xlsx,.xls,.parquet,.json"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  handleFileUpload(e.target.files[0]);
+                }
+              }} 
+            />
             <div className="w-12 h-12 rounded-2xl bg-white border border-neutral-200 shadow-sm mx-auto flex items-center justify-center text-indigo-600 mb-3">
               <UploadCloud className="w-6 h-6" />
             </div>
             <div className="text-sm font-bold text-neutral-800">
-              {isParsing
-                ? '正在解析 705,893 行数据与时间序列...'
-                : datasetInfo
-                ? `${datasetInfo.filename} 解析成功！`
-                : '拖入 CSV/XLSX/PDF 文件，或点击浏览文件'}
+              {isUploading
+                ? '正在上传并解析中，请稍候...'
+                : '拖入 CSV/XLSX/Parquet/JSON 文件，或点击浏览文件'}
             </div>
             <div className="text-xs text-neutral-400 mt-1">
-              支持最大 500MB 文件 · 自动执行格式校验与缺失值检测
+              支持最大 500MB 文件 · 自动执行格式校验、Schema 推断及 R2 转换
             </div>
           </div>
-
-          {/* Schema Mapping Table preview */}
-          {datasetInfo && (
-            <div className="p-5 bg-neutral-50 rounded-xl border border-neutral-200/60 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-neutral-900">Schema 字段智能映射</h4>
-                  <p className="text-[11px] text-neutral-400">
-                    数据范围: {datasetInfo.dateRange} · 标的数量: {datasetInfo.symbolCount} 只
-                  </p>
-                </div>
-                <span className="px-2.5 py-1 bg-emerald-50 text-emerald-600 border border-emerald-200 text-xs font-mono font-semibold rounded-lg">
-                  8 / 8 字段映射完美对齐
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-                {datasetInfo.fieldMappings.map((m: any, idx: number) => (
-                  <div key={idx} className="p-2.5 bg-white rounded-lg border border-neutral-200">
-                    <span className="text-neutral-400 block text-[10px]">{m.sourceField}</span>
-                    <span className="text-neutral-900 font-bold">→ {m.mappedField}</span>
+          
+          {datasets.length > 0 && (
+            <div className="pt-4 space-y-3">
+              <h4 className="text-xs font-bold text-neutral-900">已上传的数据集</h4>
+              <div className="space-y-2">
+                {datasets.map(ds => (
+                  <div key={ds.id} className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex justify-between items-center">
+                    <div>
+                      <div className="text-sm font-bold">{ds.name}</div>
+                      <div className="text-xs text-neutral-500 flex gap-2">
+                        <span>格式: {ds.format}</span>
+                        <span>大小: {(ds.size_bytes / 1024).toFixed(1)} KB</span>
+                        <span>状态: {ds.status}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={(e) => { e.stopPropagation(); loadDatasetPreview(ds); setActiveSubTab('browser'); }} className="text-xs px-3 py-1 bg-white border border-neutral-200 rounded-lg hover:bg-neutral-100 text-neutral-700">查看</button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(ds.id); }} className="text-xs px-3 py-1 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 flex items-center"><Trash2 className="w-3 h-3 mr-1" /> 删除</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -222,61 +309,58 @@ export const DataCenterView: React.FC = () => {
       {activeSubTab === 'browser' && (
         <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-100">
-            <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
-              <HardDrive className="w-4 h-4 text-neutral-600" />
-              数据浏览器 (Interactive Data Grid)
-            </h3>
             <div className="flex items-center gap-3">
-              <input
-                type="text"
-                value={dataSearchTerm}
-                onChange={(e) => setDataSearchTerm(e.target.value)}
-                placeholder="搜索代码或股票名称 (如 600519 / 茅台)..."
-                className="px-3 py-1.5 bg-neutral-50 text-xs rounded-xl border border-neutral-200 focus:outline-none focus:bg-white w-64"
-              />
-              <span className="text-xs font-mono text-neutral-400">显示 {dataGridRows.length} 条样本</span>
+               <h3 className="text-sm font-bold text-neutral-900 flex items-center gap-2">
+                 <HardDrive className="w-4 h-4 text-neutral-600" />
+                 数据浏览器
+               </h3>
+               {datasets.length > 0 && (
+                 <select 
+                   className="text-xs border border-neutral-200 rounded px-2 py-1 bg-neutral-50"
+                   value={selectedDataset?.id || ''}
+                   onChange={(e) => {
+                     const ds = datasets.find(d => d.id === e.target.value);
+                     if (ds) loadDatasetPreview(ds);
+                   }}
+                 >
+                   <option value="">-- 选择数据集 --</option>
+                   {datasets.map(ds => <option key={ds.id} value={ds.id}>{ds.name} ({ds.status})</option>)}
+                 </select>
+               )}
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-mono text-neutral-400">显示前 {previewData.length} 行预览 (最大 100 行)</span>
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs font-mono">
-              <thead>
-                <tr className="text-neutral-400 border-b border-neutral-100 uppercase">
-                  <th className="py-2.5 px-3">Symbol</th>
-                  <th className="py-2.5 px-3">名称</th>
-                  <th className="py-2.5 px-3">Date</th>
-                  <th className="py-2.5 px-3">Open</th>
-                  <th className="py-2.5 px-3">High</th>
-                  <th className="py-2.5 px-3">Low</th>
-                  <th className="py-2.5 px-3">Close</th>
-                  <th className="py-2.5 px-3">PE_TTM</th>
-                  <th className="py-2.5 px-3">Volume</th>
-                  <th className="py-2.5 px-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 text-neutral-800">
-                {dataGridRows
-                  .filter(
-                    (r) =>
-                      r.symbol.toLowerCase().includes(dataSearchTerm.toLowerCase()) ||
-                      r.name.includes(dataSearchTerm)
-                  )
-                  .map((r, idx) => (
+            {loading ? (
+              <div className="py-10 text-center text-xs text-neutral-500">加载中...</div>
+            ) : !selectedDataset ? (
+              <div className="py-10 text-center text-xs text-neutral-500">请选择一个数据集以浏览</div>
+            ) : previewData.length === 0 ? (
+              <div className="py-10 text-center text-xs text-neutral-500">此数据集无预览数据或正在解析中</div>
+            ) : (
+              <table className="w-full text-left border-collapse text-xs font-mono">
+                <thead>
+                  <tr className="text-neutral-400 border-b border-neutral-100 uppercase">
+                    {Object.keys(previewData[0]).map((key) => (
+                      <th key={key} className="py-2.5 px-3">{key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 text-neutral-800">
+                  {previewData.map((row, idx) => (
                     <tr key={idx} className="hover:bg-neutral-50 transition-colors">
-                      <td className="py-2.5 px-3 font-bold text-neutral-900">{r.symbol}</td>
-                      <td className="py-2.5 px-3 font-sans text-neutral-700">{r.name}</td>
-                      <td className="py-2.5 px-3 text-neutral-500">{r.date}</td>
-                      <td className="py-2.5 px-3">{r.open}</td>
-                      <td className="py-2.5 px-3">{r.high}</td>
-                      <td className="py-2.5 px-3">{r.low}</td>
-                      <td className="py-2.5 px-3 font-bold text-emerald-600">{r.close}</td>
-                      <td className="py-2.5 px-3">{r.pe}x</td>
-                      <td className="py-2.5 px-3">{r.volume}</td>
-                      <td className="py-2.5 px-3 text-emerald-600 font-semibold">● {r.status}</td>
+                      {Object.values(row).map((val: any, vIdx) => (
+                        <td key={vIdx} className="py-2.5 px-3 truncate max-w-[200px]" title={String(val)}>{String(val)}</td>
+                      ))}
                     </tr>
                   ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

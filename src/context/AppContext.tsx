@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { MarketColorMode, WorkspaceView, PaperAccount, UserProfile } from '../types';
 import { mockPaperAccount } from '../mocks/mockPortfolio';
 import { UserService } from '../services/userService';
+import { PortfolioService } from '../services/quantServices';
 import { formatErrorMessage } from '../utils/formatters';
 
 interface AppContextType {
@@ -14,7 +15,7 @@ interface AppContextType {
   isAuthModalOpen: boolean;
   authModalMode: 'login' | 'register';
   selectedBacktestId: string;
-  paperAccount: PaperAccount;
+  paperAccount: PaperAccount | null;
   isTransitioningToWorkspace: boolean;
   userCenterSubTab: 'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security';
   currentUser: UserProfile;
@@ -35,7 +36,7 @@ interface AppContextType {
   enterWorkspaceWithTransition: (targetView?: WorkspaceView) => void;
   navigateToStockDetail: (symbol: string) => void;
   addFactorToLibrary: (factor: any) => void;
-  buyStock: (symbol: string, quantity: number, price: number) => boolean;
+  refreshPaperAccount: () => Promise<void>;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (payload: any) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -55,13 +56,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [selectedBacktestId, setSelectedBacktestId] = useState<string>('bt_mom_60_v1');
-  const [paperAccount] = useState<PaperAccount>(mockPaperAccount);
-  const [isTransitioningToWorkspace, setIsTransitioningToWorkspace] = useState<boolean>(false);
-  const [userCenterSubTab, setUserCenterSubTab] = useState<'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security'>('overview');
+  const [paperAccount, setPaperAccount] = useState<PaperAccount | null>(null);
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => UserService.getProfile());
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => UserService.isAuthenticated());
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      PortfolioService.getPaperAccount().then(setPaperAccount).catch(console.error);
+    } else {
+      setPaperAccount(null);
+    }
+  }, [isAuthenticated]);
+  const [isTransitioningToWorkspace, setIsTransitioningToWorkspace] = useState<boolean>(false);
+  const [userCenterSubTab, setUserCenterSubTab] = useState<'overview' | 'api-keys' | 'research' | 'factors' | 'preferences' | 'profile' | 'security'>('overview');
 
   // Global Keyboard listener for Cmd+K / Ctrl+K
   useEffect(() => {
@@ -203,15 +212,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Factor added to library state
   };
 
-  const buyStock = (symbol: string, quantity: number, price: number): boolean => {
-    const cost = quantity * price;
-    if (paperAccount.cash >= cost) {
-      paperAccount.cash -= cost;
-      paperAccount.stockValue += cost;
-      paperAccount.totalAssets = paperAccount.cash + paperAccount.stockValue;
-      return true;
+  const refreshPaperAccount = async () => {
+    if (isAuthenticated) {
+      try {
+        const account = await PortfolioService.getPaperAccount();
+        setPaperAccount(account);
+      } catch (e) {
+        console.error(e);
+      }
     }
-    return false;
   };
 
   return (
@@ -247,7 +256,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         enterWorkspaceWithTransition,
         navigateToStockDetail,
         addFactorToLibrary,
-        buyStock,
+        refreshPaperAccount,
         login,
         register,
         logout,

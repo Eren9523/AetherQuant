@@ -6,6 +6,14 @@ import { Briefcase, PieChart } from 'lucide-react';
 export const PortfolioView: React.FC = () => {
   const { paperAccount, navigateToStockDetail } = useApp();
 
+  if (!paperAccount) {
+    return (
+      <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto flex items-center justify-center text-sm text-neutral-500">
+        加载持仓信息中...
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-8 space-y-6 w-full max-w-[2100px] mx-auto animate-in fade-in duration-300">
       <div className="p-6 bg-white rounded-2xl border border-neutral-200/80 shadow-sm space-y-4">
@@ -15,10 +23,10 @@ export const PortfolioView: React.FC = () => {
               <Briefcase className="w-4 h-4 text-neutral-700" />
               组合与实时持仓归因
             </h2>
-            <p className="text-xs text-neutral-400">总资产: ¥{paperAccount.totalAssets.toLocaleString()} · 现金: ¥{paperAccount.cash.toLocaleString()}</p>
+            <p className="text-xs text-neutral-400">总资产: ¥{paperAccount.totalAssets.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · 现金: ¥{paperAccount.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
-          <span className="px-3 py-1 bg-emerald-50 text-emerald-600 font-mono font-bold text-xs rounded-lg border border-emerald-200">
-            夏普比率 1.37
+          <span className="px-3 py-1 bg-neutral-100 text-neutral-600 font-mono font-bold text-xs rounded-lg border border-neutral-200">
+            Sharpe --
           </span>
         </div>
 
@@ -38,17 +46,26 @@ export const PortfolioView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 font-sans">
-              {paperAccount.positions.map((pos) => (
-                <tr key={pos.symbol} className="hover:bg-neutral-50 transition-colors">
-                  <td className="py-3 px-3">
+              {paperAccount.positions.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-neutral-400">
+                    当前无持仓记录
+                  </td>
+                </tr>
+              ) : (
+                paperAccount.positions.map((pos) => (
+                  <tr key={pos.symbol} className="hover:bg-neutral-50 transition-colors">
+                    <td className="py-3 px-3">
                     <div className="font-bold text-neutral-900">{pos.name}</div>
                     <div className="text-[10px] text-neutral-400 font-mono">{pos.symbol}</div>
                   </td>
                   <td className="py-3 px-3 font-mono text-neutral-800">{pos.shares} 股</td>
-                  <td className="py-3 px-3 font-mono text-neutral-600">¥{pos.costPrice}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-neutral-900">¥{pos.currentPrice}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-neutral-900">¥{pos.marketValue.toLocaleString()}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-emerald-600">+¥{pos.unrealizedPnL.toLocaleString()}</td>
+                  <td className="py-3 px-3 font-mono text-neutral-600">¥{Number(pos.costPrice).toFixed(3)}</td>
+                  <td className="py-3 px-3 font-mono font-bold text-neutral-900">¥{Number(pos.currentPrice).toFixed(3)}</td>
+                  <td className="py-3 px-3 font-mono font-bold text-neutral-900">¥{pos.marketValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className={`py-3 px-3 font-mono font-bold ${pos.unrealizedPnL >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {pos.unrealizedPnL >= 0 ? '+' : ''}¥{pos.unrealizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
                   <td className="py-3 px-3">
                     <TrendBadge value={pos.unrealizedPnLPercent} />
                   </td>
@@ -61,7 +78,7 @@ export const PortfolioView: React.FC = () => {
                     </button>
                   </td>
                 </tr>
-              ))}
+              )))}
             </tbody>
           </table>
         </div>
