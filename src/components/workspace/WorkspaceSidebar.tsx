@@ -32,6 +32,7 @@ import {
 import { cn } from '../../utils/cn';
 import { RUNTIME_CONFIG } from '../../config/runtimeConfig';
 import { PenguinLogo } from '../common/PenguinLogo';
+import { useTranslation } from '../../i18n';
 
 interface NavItem {
   id: WorkspaceView;
@@ -41,8 +42,14 @@ interface NavItem {
 }
 
 export const WorkspaceSidebar: React.FC = () => {
-  const { workspaceView, setWorkspaceView, setCurrentRoute } = useApp();
-  const [collapsed, setCollapsed] = useState(false);
+  const { workspaceView, setWorkspaceView, setCurrentRoute, sidebarAutoExpand, language } = useApp();
+  const { t } = useTranslation(language);
+  const [collapsed, setCollapsed] = useState(!sidebarAutoExpand);
+
+  React.useEffect(() => {
+    setCollapsed(!sidebarAutoExpand);
+  }, [sidebarAutoExpand]);
+
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     market: true,
     research: true,
@@ -58,144 +65,144 @@ export const WorkspaceSidebar: React.FC = () => {
 
   const navGroups: { groupName: string; key: string; items: NavItem[] }[] = [
     {
-      groupName: '概览',
+      groupName: t("nav.dashboard"),
       key: 'overview_group',
       items: [
         {
           id: 'overview',
-          label: '总览 Dashboard',
+          label: t("nav.dashboard"),
           icon: <LayoutDashboard className="w-4 h-4" />,
         },
       ],
     },
     {
-      groupName: '市场行情',
+      groupName: t("nav.market"),
       key: 'market',
       items: [
         {
           id: 'market',
-          label: '市场全景',
+          label: t("nav.marketOverview"),
           icon: <Globe className="w-4 h-4" />,
         },
         {
           id: 'stock-detail',
-          label: '股票深度 Terminal',
+          label: t("nav.stockDetail"),
           icon: <LineChart className="w-4 h-4" />,
         },
       ],
     },
     {
-      groupName: 'AI 研究',
+      groupName: t("nav.research"),
       key: 'research',
       items: [
         {
           id: 'ai-research',
-          label: 'AI 交互研究 Thread',
+          label: t("nav.aiThread"),
           icon: <Sparkles className="w-4 h-4 text-amber-500" />,
         },
         {
           id: 'doc-research',
-          label: '研报与文档解析',
+          label: t("nav.docResearch"),
           icon: <FileText className="w-4 h-4" />,
         },
       ],
     },
     {
-      groupName: '数据中心',
+      groupName: t("nav.data"),
       key: 'data',
       items: [
         {
           id: 'data-center',
-          label: '数据源与质量',
+          label: t("nav.dataQuality"),
           icon: <Database className="w-4 h-4" />,
         },
         {
           id: 'upload-center',
-          label: '上传中心 (BYOD)',
+          label: t("nav.upload"),
           icon: <UploadCloud className="w-4 h-4" />,
         },
         {
           id: 'data-browser',
-          label: '数据浏览器',
+          label: t("nav.dataBrowser"),
           icon: <HardDrive className="w-4 h-4" />,
         },
       ],
     },
     {
-      groupName: '因子与策略',
+      groupName: t("nav.factor"),
       key: 'factor',
       items: [
         {
           id: 'factor-library',
-          label: '因子库',
+          label: t("nav.factorLib"),
           icon: <Cpu className="w-4 h-4" />,
         },
         {
           id: 'factor-lab',
-          label: '因子实验室 (IC/RankIC)',
+          label: t("nav.factorLab"),
           icon: <BarChart2 className="w-4 h-4" />,
         },
         {
           id: 'strategy-library',
-          label: '策略库',
+          label: t("nav.strategyLib"),
           icon: <BookOpen className="w-4 h-4" />,
         },
         {
           id: 'strategy-builder',
-          label: '策略构建器',
+          label: t("nav.strategyBuilder"),
           icon: <Layers className="w-4 h-4" />,
         },
       ],
     },
     {
-      groupName: '回测与 ML',
+      groupName: t("nav.backtest"),
       key: 'backtest',
       items: [
         {
           id: 'backtest-center',
-          label: '回测中心',
+          label: t("nav.backtestCenter"),
           icon: <Play className="w-4 h-4" />,
         },
         {
           id: 'strategy-compare',
-          label: '策略对比矩阵',
+          label: t("nav.strategyCompare"),
           icon: <GitCompare className="w-4 h-4" />,
         },
         {
           id: 'ml-lab',
-          label: 'ML 实验室 (LSTM/XGB)',
+          label: t("nav.mlLab"),
           icon: <TestTube className="w-4 h-4" />,
         },
       ],
     },
     {
-      groupName: '交易与管控',
+      groupName: t("nav.trade"),
       key: 'trading',
       items: [
         {
           id: 'portfolio',
-          label: '组合与持仓归因',
+          label: t("nav.portfolio"),
           icon: <Briefcase className="w-4 h-4" />,
         },
         {
           id: 'admin-console',
-          label: '后台管理 (管理员专用)',
+          label: t("nav.admin"),
           icon: <ShieldAlert className="w-4 h-4 text-purple-600" />,
         },
         {
           id: 'automation',
-          label: '定时任务与 Pipeline',
+          label: t("nav.pipeline"),
           icon: <Clock className="w-4 h-4" />,
         },
       ],
     },
     {
-      groupName: '系统',
+      groupName: t("nav.settings"),
       key: 'settings_group',
       items: [
         {
           id: 'settings',
-          label: '系统偏好设置',
+          label: t("nav.settings"),
           icon: <Settings className="w-4 h-4" />,
         },
       ],
@@ -298,7 +305,7 @@ export const WorkspaceSidebar: React.FC = () => {
           className="w-full flex items-center justify-center gap-2 py-2 px-2 rounded-xl bg-white border border-neutral-200/80 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 transition-colors shadow-2xs"
         >
           <Home className="w-3.5 h-3.5 text-neutral-500" />
-          {!collapsed && <span>返回产品首页</span>}
+          {!collapsed && <span>{t("nav.logout")}</span>}
         </button>
       </div>
     </aside>

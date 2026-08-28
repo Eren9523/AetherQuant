@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+html.dark {
+  filter: invert(1) hue-rotate(180deg);
+  background: #0f172a;
+}
+html.dark img, 
+html.dark canvas, 
+html.dark svg, 
+html.dark video, 
+html.dark [data-theme-ignore] {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+html.density-compact {
+  font-size: 14px;
+}
+html.density-spacious {
+  font-size: 18px;
+}
+
+html.disable-animations * {
+  animation: none !important;
+  transition: none !important;
+}
+
+html.font-tabular {
+  font-variant-numeric: tabular-nums;
+}

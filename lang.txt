@@ -1,0 +1,151 @@
+823:            {activeTab === 'language' && (
+824-              <div
+825-                key="tab-language"
+826-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
+827-              >
+828-                <div>
+829-                  <h2 className="text-lg font-bold text-slate-900">语言与地区</h2>
+830-                  <p className="text-xs text-slate-500 mt-0.5">
+831-                    配置系统的语言偏好、时区及数据显示格式。
+832-                  </p>
+833-                </div>
+834-
+835-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+836-                  {/* Default Language */}
+837-                  <div className="space-y-1.5">
+838-                    <label className="text-xs font-semibold text-slate-700 block">
+839-                      默认语言
+840-                    </label>
+841-                    <select
+842-                      value={language}
+843-                      onChange={(e) => setLanguage(e.target.value)}
+844-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all cursor-pointer shadow-2xs"
+845-                    >
+846-                      <option value="zh-CN">简体中文 (zh-CN)</option>
+847-                      <option value="zh-HK">繁體中文 (zh-HK)</option>
+848-                      <option value="en-US">English (US)</option>
+849-                      <option value="ja-JP">日本語 (ja-JP)</option>
+850-                    </select>
+851-                  </div>
+852-
+853-                  {/* Time Zone */}
+854-                  <div className="space-y-1.5">
+855-                    <label className="text-xs font-semibold text-slate-700 block">
+856-                      时区
+857-                    </label>
+858-                    <select
+859-                      value={timeZone}
+860-                      onChange={(e) => setTimeZone(e.target.value)}
+861-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all cursor-pointer shadow-2xs"
+862-                    >
+863-                      <option value="UTC+08:00">中国标准时间 (UTC+08:00)</option>
+864-                      <option value="UTC-05:00">美东时间 (EST UTC-05:00)</option>
+865-                      <option value="UTC+00:00">世界标准时间 (UTC+00:00)</option>
+866-                      <option value="UTC+09:00">东京标准时间 (JST UTC+09:00)</option>
+867-                    </select>
+868-                  </div>
+869-
+870-                  {/* Date Format */}
+871-                  <div className="space-y-1.5">
+872-                    <label className="text-xs font-semibold text-slate-700 block">
+873-                      日期格式
+874-                    </label>
+875-                    <select
+876-                      value={dateFormat}
+877-                      onChange={(e) => setDateFormat(e.target.value)}
+878-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all cursor-pointer shadow-2xs"
+879-                    >
+880-                      <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+881-                      <option value="YYYY/MM/DD">YYYY/MM/DD</option>
+882-                      <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+883-                      <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+884-                    </select>
+885-                  </div>
+886-
+887-                  {/* Time Format */}
+888-                  <div className="space-y-1.5">
+889-                    <label className="text-xs font-semibold text-slate-700 block">
+890-                      时间格式
+891-                    </label>
+892-                    <select
+893-                      value={timeFormat}
+894-                      onChange={(e) => setTimeFormat(e.target.value)}
+895-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all cursor-pointer shadow-2xs"
+896-                    >
+897-                      <option value="24h">24小时制</option>
+898-                      <option value="12h">12小时制 (AM/PM)</option>
+899-                    </select>
+900-                  </div>
+901-                </div>
+902-
+903-                {/* Number & Percentage Format */}
+904-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+905-                  <div className="space-y-1.5">
+906-                    <label className="text-xs font-semibold text-slate-700 block">
+907-                      数字与千分位格式
+908-                    </label>
+909-                    <select
+910-                      value={numberFormat}
+911-                      onChange={(e) => setNumberFormat(e.target.value)}
+912-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all cursor-pointer shadow-2xs"
+913-                    >
+914-                      <option value="standard">1,234,567.89 (Standard)</option>
+915-                      <option value="european">1 234 567,89 (European)</option>
+916-                      <option value="indian">1,23,456.78 (Indian)</option>
+917-                    </select>
+918-                  </div>
+919-
+920-                  <div className="space-y-1.5">
+921-                    <label className="text-xs font-semibold text-slate-700 block">
+922-                      日历与交易周起始日
+923-                    </label>
+924-                    <select
+925-                      value={weekStartDay}
+926-                      onChange={(e) => setWeekStartDay(e.target.value as any)}
+927-                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all cursor-pointer shadow-2xs"
+928-                    >
+929-                      <option value="monday">星期一 (周一开盘标准)</option>
+930-                      <option value="sunday">星期日 (周日自然周)</option>
+931-                    </select>
+932-                  </div>
+933-                </div>
+934-
+935-                {/* Real-time Preview Banner (Exact Screenshot 1 Style) */}
+936-                <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-2">
+937-                  <div className="text-[11px] font-semibold text-slate-400">
+938-                    当前格式实时预览
+939-                  </div>
+940-                  <div className="flex flex-wrap items-center gap-6 text-xs md:text-sm text-slate-700 font-mono">
+941-                    <div>
+942-                      <span className="text-slate-400 font-sans mr-2">日期时间:</span>
+943-                      <span className="font-semibold text-slate-800">{currentTimeStr}</span>
+944-                    </div>
+945-                    <div>
+946-                      <span className="text-slate-400 font-sans mr-2">数字样例:</span>
+947-                      <span className="font-semibold text-slate-800">{previewNumber}</span>
+948-                    </div>
+949-                    <div>
+950-                      <span className="text-slate-400 font-sans mr-2">收益率:</span>
+951-                      <span className="font-semibold text-emerald-600">+18.42%</span>
+952-                    </div>
+953-                  </div>
+954-                </div>
+955-              </div>
+956-            )}
+957-
+958-            {/* TAB 4: 通用偏好 (General) */}
+959-            {activeTab === 'general' && (
+960-              <div
+961-                key="tab-general"
+962-                className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
+963-              >
+964-                <div>
+965-                  <h2 className="text-lg font-bold text-slate-900">通用偏好</h2>
+966-                  <p className="text-xs text-slate-500 mt-0.5">
+967-                    管理系统启动入口、数据流刷新频率及本地状态缓存。
+968-                  </p>
+969-                </div>
+970-
+971-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+972-                  <div className="space-y-1.5">
+973-                    <label className="text-xs font-semibold text-slate-700 block">

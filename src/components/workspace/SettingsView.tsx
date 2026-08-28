@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useTranslation } from '../../i18n';
 import { ApiClient, getUserAiConfig, saveUserAiConfig } from '../../services/apiClient';
 import {
   Settings,
@@ -78,7 +79,21 @@ export const SettingsView: React.FC = () => {
     setMarketColorMode,
     setWorkspaceView,
     selectedStockSymbol,
+    themeMode, setThemeMode,
+    contentDensity, setContentDensity,
+    sidebarAutoExpand, setSidebarAutoExpand,
+    enableAnimations, setEnableAnimations,
+    enableTabularNumbers, setEnableTabularNumbers,
+    chartRenderEngine, setChartRenderEngine,
+    language, setLanguage,
+    timeZone, setTimeZone,
+    dateFormat, setDateFormat,
+    timeFormat, setTimeFormat,
+    numberFormat, setNumberFormat,
+    weekStartDay, setWeekStartDay,
   } = useApp();
+  
+  const { t } = useTranslation(language);
 
   // Active Main Tab
   const [activeTab, setActiveTab] = useState<
@@ -89,20 +104,10 @@ export const SettingsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   // 1. Appearance & Layout State (Screenshot Pixel-Perfect)
-  const [themeMode, setThemeMode] = useState<'light' | 'dark' | 'system'>('light');
-  const [contentDensity, setContentDensity] = useState<'standard' | 'compact' | 'spacious'>('standard');
-  const [sidebarAutoExpand, setSidebarAutoExpand] = useState<boolean>(true);
-  const [enableAnimations, setEnableAnimations] = useState<boolean>(true);
-  const [enableTabularNumbers, setEnableTabularNumbers] = useState<boolean>(true);
-  const [chartRenderEngine, setChartRenderEngine] = useState<'canvas' | 'svg'>('canvas');
+  // These are now handled by useApp()
 
   // 2. Language & Region Form State
-  const [defaultLanguage, setDefaultLanguage] = useState('zh-CN');
-  const [timeZone, setTimeZone] = useState('UTC+08:00');
-  const [dateFormat, setDateFormat] = useState('YYYY-MM-DD');
-  const [timeFormat, setTimeFormat] = useState('24h');
-  const [numberFormat, setNumberFormat] = useState('standard');
-  const [weekStartDay, setWeekStartDay] = useState<'monday' | 'sunday'>('monday');
+  // These are now handled by useApp()
 
   // 3. Service & AI Gateway Form State
   const [channelMode, setChannelMode] = useState<'system' | 'custom'>('system');
@@ -181,18 +186,49 @@ export const SettingsView: React.FC = () => {
   useEffect(() => {
     const updateTime = () => {
       const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      setCurrentTimeStr(`${year}-${month}-${day} ${hours}:${minutes}:${seconds}`);
+      try {
+        let selectedTimezone = 'UTC';
+        if (timeZone.includes('UTC+08:00')) selectedTimezone = 'Asia/Shanghai';
+        else if (timeZone.includes('UTC-05:00')) selectedTimezone = 'America/New_York';
+        else if (timeZone.includes('UTC+09:00')) selectedTimezone = 'Asia/Tokyo';
+
+        const dFormat = new Intl.DateTimeFormat(language, {
+          timeZone: selectedTimezone,
+          year: 'numeric',
+          month: dateFormat.includes('MM') ? '2-digit' : 'numeric',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: timeFormat === '12h'
+        });
+        setCurrentTimeStr(dFormat.format(now));
+      } catch (e) {
+        // Fallback
+        setCurrentTimeStr(now.toLocaleString());
+      }
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
-  }, []);
+  }, [language, timeZone, dateFormat, timeFormat]);
+
+  const previewNumber = (() => {
+    try {
+      let formatLocale = language;
+      if (numberFormat === 'european') formatLocale = 'fr-FR';
+      if (numberFormat === 'indian') formatLocale = 'en-IN';
+      
+      const nFormat = new Intl.NumberFormat(formatLocale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        useGrouping: true
+      });
+      return nFormat.format(1234567.89);
+    } catch (e) {
+      return "1,234,567.89";
+    }
+  })();
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
@@ -259,7 +295,7 @@ export const SettingsView: React.FC = () => {
       sidebarAutoExpand,
       enableAnimations,
       marketColorMode,
-      defaultLanguage,
+      language,
       timeZone,
       dateFormat,
       timeFormat,
@@ -293,7 +329,7 @@ export const SettingsView: React.FC = () => {
     setSidebarAutoExpand(true);
     setEnableAnimations(true);
     setMarketColorMode('CN');
-    setDefaultLanguage('zh-CN');
+    setLanguage('zh-CN');
     setTimeZone('UTC+08:00');
     setDateFormat('YYYY-MM-DD');
     setTimeFormat('24h');
@@ -314,12 +350,12 @@ export const SettingsView: React.FC = () => {
 
   // Subtab list (API settings migrated to User Center module as requested)
   const navTabs = [
-    { id: 'appearance', label: '外观与布局', icon: Laptop, badge: 'UI' },
-    { id: 'language', label: '语言与地区', icon: Globe },
-    { id: 'general', label: '通用偏好', icon: Settings },
-    { id: 'notifications', label: '交互与通知', icon: Bell },
-    { id: 'risk', label: '交易与风控', icon: ShieldAlert },
-    { id: 'about', label: '实验与关于', icon: FlaskConical },
+    { id: 'appearance', label: t("settings.tab.appearance"), icon: Laptop, badge: 'UI' },
+    { id: 'language', label: t("settings.tab.language"), icon: Globe },
+    { id: 'general', label: t("settings.tab.general"), icon: Settings },
+    { id: 'notifications', label: t("settings.tab.notifications"), icon: Bell },
+    { id: 'risk', label: t("settings.tab.trading"), icon: ShieldAlert },
+    { id: 'about', label: t("settings.tab.experiments"), icon: FlaskConical },
   ];
 
   // Filter tabs by search
@@ -330,7 +366,7 @@ export const SettingsView: React.FC = () => {
       (t) =>
         t.label.toLowerCase().includes(q) ||
         (t.id === 'appearance' && (q.includes('主题') || q.includes('深色') || q.includes('浅色') || q.includes('动画') || q.includes('布局') || q.includes('密度') || q.includes('侧边栏') || q.includes('红绿') || q.includes('涨跌'))) ||
-        (t.id === 'language' && (q.includes('语言') || q.includes('时区') || q.includes('日期') || q.includes('数字') || q.includes('时间'))) ||
+        (t.id === 'language' && (q.includes('语言') || q.includes('{t("settings.lang.timeZone")}') || q.includes('日期') || q.includes('数字') || q.includes('时间'))) ||
         (t.id === 'notifications' && (q.includes('webhook') || q.includes('通知') || q.includes('钉钉') || q.includes('飞书') || q.includes('企微') || q.includes('告警'))) ||
         (t.id === 'risk' && (q.includes('风控') || q.includes('仓位') || q.includes('回撤') || q.includes('熔断') || q.includes('算法') || q.includes('twap'))) ||
         (t.id === 'about' && (q.includes('关于') || q.includes('readme') || q.includes('文档') || q.includes('版本') || q.includes('beta') || q.includes('实验')))
@@ -348,7 +384,7 @@ export const SettingsView: React.FC = () => {
                 ? '服务配置'
                 : activeTab === 'appearance'
                 ? '外观与布局'
-                : '系统设置'}
+                : t("settings.title")}
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
               v1.4.2
@@ -359,7 +395,7 @@ export const SettingsView: React.FC = () => {
               ? '管理大模型服务、运行参数与连接状态。'
               : activeTab === 'appearance'
               ? '自定义界面的视觉呈现和布局结构。'
-              : '管理平台全局基础运行规则、外观展示与交互策略。'}
+              : t("settings.subtitle")}
           </p>
         </div>
 
@@ -420,7 +456,7 @@ export const SettingsView: React.FC = () => {
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="在设置中快速搜索（如：主题、API Key、Webhook、风控、时区）..."
+          placeholder={`在设置中快速搜索（如：主题、API Key、Webhook、风控、${t("settings.lang.timeZone")}）...`}
           className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-2xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 shadow-2xs transition-all"
         />
         {searchQuery && (
@@ -792,16 +828,16 @@ export const SettingsView: React.FC = () => {
               </div>
             )}
 
-            {/* TAB 3: 语言与地区 (Matching Screenshot 1) */}
+            {/* TAB 3: t("settings.lang.title") (Matching Screenshot 1) */}
             {activeTab === 'language' && (
               <div
                 key="tab-language"
                 className="bg-white p-7 md:p-9 rounded-3xl border border-slate-200/80 shadow-sm space-y-7 animate-in fade-in duration-150"
               >
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900">语言与地区</h2>
+                  <h2 className="text-lg font-bold text-slate-900">{t("settings.lang.title")}</h2>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    配置系统的语言偏好、时区及数据显示格式。
+                    {t("settings.lang.subtitle")}
                   </p>
                 </div>
 
@@ -809,11 +845,11 @@ export const SettingsView: React.FC = () => {
                   {/* Default Language */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700 block">
-                      默认语言
+                      {t("settings.lang.defaultLang")}
                     </label>
                     <select
-                      value={defaultLanguage}
-                      onChange={(e) => setDefaultLanguage(e.target.value)}
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
                       className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-xs md:text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-400 transition-all cursor-pointer shadow-2xs"
                     >
                       <option value="zh-CN">简体中文 (zh-CN)</option>
@@ -826,7 +862,7 @@ export const SettingsView: React.FC = () => {
                   {/* Time Zone */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700 block">
-                      时区
+                      {t("settings.lang.timeZone")}
                     </label>
                     <select
                       value={timeZone}
@@ -843,7 +879,7 @@ export const SettingsView: React.FC = () => {
                   {/* Date Format */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700 block">
-                      日期格式
+                      {t("settings.lang.dateFormat")}
                     </label>
                     <select
                       value={dateFormat}
@@ -860,7 +896,7 @@ export const SettingsView: React.FC = () => {
                   {/* Time Format */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700 block">
-                      时间格式
+                      {t("settings.lang.timeFormat")}
                     </label>
                     <select
                       value={timeFormat}
@@ -877,7 +913,7 @@ export const SettingsView: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700 block">
-                      数字与千分位格式
+                      {t("settings.lang.numberFormat")}
                     </label>
                     <select
                       value={numberFormat}
@@ -892,7 +928,7 @@ export const SettingsView: React.FC = () => {
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-semibold text-slate-700 block">
-                      日历与交易周起始日
+                      {t("settings.lang.weekStart")}
                     </label>
                     <select
                       value={weekStartDay}
@@ -908,19 +944,19 @@ export const SettingsView: React.FC = () => {
                 {/* Real-time Preview Banner (Exact Screenshot 1 Style) */}
                 <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-2">
                   <div className="text-[11px] font-semibold text-slate-400">
-                    当前格式实时预览
+                    {t("settings.lang.preview")}
                   </div>
                   <div className="flex flex-wrap items-center gap-6 text-xs md:text-sm text-slate-700 font-mono">
                     <div>
-                      <span className="text-slate-400 font-sans mr-2">日期时间:</span>
+                      <span className="text-slate-400 font-sans mr-2">{t("settings.lang.preview.datetime")}</span>
                       <span className="font-semibold text-slate-800">{currentTimeStr}</span>
                     </div>
                     <div>
-                      <span className="text-slate-400 font-sans mr-2">数字样例:</span>
-                      <span className="font-semibold text-slate-800">1,234,567.89</span>
+                      <span className="text-slate-400 font-sans mr-2">{t("settings.lang.preview.number")}</span>
+                      <span className="font-semibold text-slate-800">{previewNumber}</span>
                     </div>
                     <div>
-                      <span className="text-slate-400 font-sans mr-2">收益率:</span>
+                      <span className="text-slate-400 font-sans mr-2">{t("settings.lang.preview.return")}</span>
                       <span className="font-semibold text-emerald-600">+18.42%</span>
                     </div>
                   </div>
